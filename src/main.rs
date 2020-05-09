@@ -1,9 +1,19 @@
+extern crate ini;
+extern crate regex;
+extern crate reqwest;
+extern crate serde_derive;
+extern crate serde_json;
+
+extern crate walkdir;
+
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::{env, io};
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+use ini::Ini;
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -20,6 +30,8 @@ struct SourceCodeFile {
 }
 
 fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
+    // TODO: It shall ignore files and directories from .gitignore
+
     let mut source_files: Vec<String> = Vec::new();
 
     let current_dir = env::current_dir()?;
@@ -32,7 +44,7 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
         let f_path = entry.path().to_string_lossy();
         let _sec = entry.metadata()?.modified()?;
 
-        if f_path.ends_with(".rs") || f_path.ends_with("*.go") {
+        if f_path.ends_with(".rs") || f_path.ends_with(".go") {
             source_files.push(f_path.to_string());
         }
     }
@@ -92,32 +104,196 @@ fn get_todos_from_source_code_file(source_file: &str) -> SourceCodeFile {
     file
 }
 
-fn get_all_todos_from_source_code_files(source_files: &[String]) {
-    // TODO (#3): Shall return something
+fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<SourceCodeFile> {
+    let mut soure_code_todos = Vec::new();
     for source_file in source_files {
         let source_file_todos = get_todos_from_source_code_file(source_file);
-        println!(
-            "Found the following TODOs for {}:",
-            source_file_todos.file_path
-        );
-        for todo in source_file_todos.todos {
-            if todo.1.issue_number > 0 {
-                println!(
-                    "\tTracked Issue in line {}, number {}: {}",
-                    todo.0 + 1,
-                    todo.1.issue_number,
-                    todo.1.title
-                )
-            } else {
-                println!("\tUntracked issue in line {}: {}", todo.0 + 1, todo.1.title)
-            }
+        soure_code_todos.push(source_file_todos);
+    }
+    soure_code_todos
+}
+
+fn parse_git_config(url: &str) -> Option<(String, String)> {
+    let re = Regex::new(r"git@github.com:(\S+)/(\S+)\.git").unwrap();
+
+    if let Some(x) = re.captures(url) {
+        return Some((
+            x.get(1).map_or("", |m| m.as_str()).to_string(),
+            x.get(2).map_or("", |m| m.as_str()).to_string(),
+        ));
+    }
+
+    None
+}
+
+fn get_current_project_from_git_config() -> Option<(String, String)> {
+    // TODO: implement proper error handling
+    // TODO: The used ini parser dies if it encounters a line starting with #, i.e., a comment
+    let current_dir = env::current_dir().unwrap();
+    let conf =
+        Ini::load_from_file(format!("{}/.git/config", current_dir.to_str().unwrap())).unwrap();
+
+    let section = conf.section(Some("remote \"origin\"")).unwrap();
+    let url = section.get("url").unwrap();
+
+    parse_git_config(url)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRepositoryIssues {
+    pub url: String,
+    #[serde(rename = "repository_url")]
+    pub repository_url: String,
+    #[serde(rename = "labels_url")]
+    pub labels_url: String,
+    #[serde(rename = "comments_url")]
+    pub comments_url: String,
+    #[serde(rename = "events_url")]
+    pub events_url: String,
+    #[serde(rename = "html_url")]
+    pub html_url: String,
+    pub id: i64,
+    #[serde(rename = "node_id")]
+    pub node_id: String,
+    pub number: i64,
+    pub title: String,
+    pub user: User,
+    pub labels: Vec<::serde_json::Value>,
+    pub state: String,
+    pub locked: bool,
+    pub assignee: ::serde_json::Value,
+    pub assignees: Vec<::serde_json::Value>,
+    pub milestone: ::serde_json::Value,
+    pub comments: i64,
+    #[serde(rename = "created_at")]
+    pub created_at: String,
+    #[serde(rename = "updated_at")]
+    pub updated_at: String,
+    #[serde(rename = "closed_at")]
+    pub closed_at: ::serde_json::Value,
+    #[serde(rename = "author_association")]
+    pub author_association: String,
+    pub body: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct User {
+    pub login: String,
+    pub id: i64,
+    #[serde(rename = "node_id")]
+    pub node_id: String,
+    #[serde(rename = "avatar_url")]
+    pub avatar_url: String,
+    #[serde(rename = "gravatar_id")]
+    pub gravatar_id: String,
+    pub url: String,
+    #[serde(rename = "html_url")]
+    pub html_url: String,
+    #[serde(rename = "followers_url")]
+    pub followers_url: String,
+    #[serde(rename = "following_url")]
+    pub following_url: String,
+    #[serde(rename = "gists_url")]
+    pub gists_url: String,
+    #[serde(rename = "starred_url")]
+    pub starred_url: String,
+    #[serde(rename = "subscriptions_url")]
+    pub subscriptions_url: String,
+    #[serde(rename = "organizations_url")]
+    pub organizations_url: String,
+    #[serde(rename = "repos_url")]
+    pub repos_url: String,
+    #[serde(rename = "events_url")]
+    pub events_url: String,
+    #[serde(rename = "received_events_url")]
+    pub received_events_url: String,
+    #[serde(rename = "type")]
+    pub type_field: String,
+    #[serde(rename = "site_admin")]
+    pub site_admin: bool,
+}
+
+fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Vec<GitHubRepositoryIssues> {
+    // TODO: implement correct error handling
+    let request_url = format!(
+        "https://api.github.com/repos/{owner}/{repo}/issues",
+        owner = owner,
+        repo = repo
+    );
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .get(&request_url)
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("token {token}", token = token),
+        )
+        .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
+        .send()
+        .unwrap();
+
+    let root: Vec<GitHubRepositoryIssues> = response.json().unwrap();
+    root
+}
+
+fn get_token_from_env() -> Option<String> {
+    if env::var("GITHUB_TOKEN").is_err() {
+        return None;
+    }
+    Some(env::var("GITHUB_TOKEN").unwrap())
+}
+
+fn fetch_current_github_issues() -> Option<Vec<GitHubRepositoryIssues>> {
+    get_current_project_from_git_config();
+
+    if let Some(x) = get_token_from_env() {
+        if let Some((owner, repo)) = get_current_project_from_git_config() {
+            Some(get_issues_from_github(&x, &owner, &repo))
+        } else {
+            None
         }
+    } else {
+        println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
+        None
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let source_files = get_all_source_code_files()?;
-    get_all_todos_from_source_code_files(&source_files);
+    let source_code_todos = get_all_todos_from_source_code_files(&source_files);
+
+    println!("Found the following TODOs for the current project:");
+    for file in &source_code_todos {
+        for todo in &file.todos {
+            if todo.1.issue_number > 0 {
+                println!(
+                    "{}:{}: Tracked TODO {}: {}",
+                    file.file_path,
+                    todo.0 + 1,
+                    todo.1.issue_number,
+                    todo.1.title
+                )
+            } else {
+                println!(
+                    "{}:{}: Untracked TODO: {}",
+                    file.file_path,
+                    todo.0 + 1,
+                    todo.1.title
+                )
+            }
+        }
+    }
+
+    println!("\nFound the following GitHub issues for the current project:");
+    let github_todos = fetch_current_github_issues();
+    if let Some(x) = github_todos {
+        for todo in x {
+            println!("#{} {}", todo.number, todo.title);
+        }
+    } else {
+        println!("Could not fetch GitHub issues for current project")
+    }
 
     // TODO: compare_todos_and_github_issues() has to be implemented
     // TODO: create_new_github_issues() has to be implemented
