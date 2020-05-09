@@ -43,32 +43,30 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
 fn parse_line(line: &str) -> Option<Todo> {
     let re = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
     let text = line;
-    if re.is_match(text) {
-        for cap in re.captures_iter(text) {
-            let t = Todo {
-                title: cap[1].to_string(),
-                issue_number: 0,
-            };
-            return Some(t);
-        }
-        // if re.captures_len() >= 1 {
-        //     re.capture
-        // }
+
+    if let Some(x) = re.captures(text) {
+        let t = Todo {
+            title: x.get(1).map_or("", |m| m.as_str()).to_string(),
+            issue_number: 0,
+        };
+        return Some(t);
     }
 
     let re = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
     let text = line;
-    if re.is_match(text) {
-        for cap in re.captures_iter(text) {
-            let issue_number = cap[1].to_string().parse::<u16>().unwrap();
-            let t = Todo {
-                title: cap[2].to_string(),
-                issue_number,
-            };
-            return Some(t);
-        }
+    if let Some(x) = re.captures(text) {
+        let issue_number = x
+            .get(1)
+            .map_or("0", |m| m.as_str())
+            .to_string()
+            .parse::<u16>()
+            .unwrap();
+        let t = Todo {
+            title: x.get(2).map_or("", |m| m.as_str()).to_string(),
+            issue_number,
+        };
+        return Some(t);
     }
-
     None
 }
 
