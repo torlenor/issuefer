@@ -25,9 +25,10 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
     let current_dir = env::current_dir()?;
 
     for entry in WalkDir::new(current_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok()) {
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let f_path = entry.path().to_string_lossy();
         let _sec = entry.metadata()?.modified()?;
 
@@ -39,7 +40,7 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
     Ok(source_files)
 }
 
-fn parse_line(line: &String) -> Option<Todo> {
+fn parse_line(line: &str) -> Option<Todo> {
     let re = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
     let text = line;
     if re.is_match(text) {
@@ -50,6 +51,9 @@ fn parse_line(line: &String) -> Option<Todo> {
             };
             return Some(t);
         }
+        // if re.captures_len() >= 1 {
+        //     re.capture
+        // }
     }
 
     let re = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
@@ -59,49 +63,55 @@ fn parse_line(line: &String) -> Option<Todo> {
             let issue_number = cap[1].to_string().parse::<u16>().unwrap();
             let t = Todo {
                 title: cap[2].to_string(),
-                issue_number: issue_number,
+                issue_number,
             };
             return Some(t);
         }
     }
 
-    return None;
+    None
 }
 
-fn get_todos_from_source_code_file(source_file: &String) -> SourceCodeFile {
+fn get_todos_from_source_code_file(source_file: &str) -> SourceCodeFile {
     // TODO: Handle error better
     let f = File::open(source_file).expect("Unable to open file");
     let f = BufReader::new(f);
 
-    let mut file = SourceCodeFile{
-        file_path: source_file.clone(),
+    let mut file = SourceCodeFile {
+        file_path: source_file.to_string(),
         todos: Vec::new(),
     };
-    
-    let mut cnt: usize = 0;
-    for line in f.lines() {
+    // let mut cnt: usize = 0;
+    // for line in f.lines() {
+    for (cnt, line) in f.lines().enumerate() {
         let line = line.expect("Unable to read line");
-        let result =parse_line(&line);
-        match result {
-            Some(x) => file.todos.push((cnt, x)),
-            None => {},
+        let result = parse_line(&line);
+        if let Some(x) = result {
+            file.todos.push((cnt, x))
         }
-        cnt = cnt + 1;
     }
 
-    return file;
+    file
 }
 
-fn get_all_todos_from_source_code_files(source_files: &Vec<String>) {
+fn get_all_todos_from_source_code_files(source_files: &[String]) {
     // TODO (#3): Shall return something
     for source_file in source_files {
         let source_file_todos = get_todos_from_source_code_file(source_file);
-        println!("Found the following TODOs for {}:", source_file_todos.file_path);
+        println!(
+            "Found the following TODOs for {}:",
+            source_file_todos.file_path
+        );
         for todo in source_file_todos.todos {
-            if todo.1.issue_number > 0{
-                println!("\tTracked Issue in line {}, number {}: {}", todo.0+1, todo.1.issue_number, todo.1.title)
+            if todo.1.issue_number > 0 {
+                println!(
+                    "\tTracked Issue in line {}, number {}: {}",
+                    todo.0 + 1,
+                    todo.1.issue_number,
+                    todo.1.title
+                )
             } else {
-                println!("\tUntracked issue in line {}: {}", todo.0+1, todo.1.title)
+                println!("\tUntracked issue in line {}: {}", todo.0 + 1, todo.1.title)
             }
         }
     }
