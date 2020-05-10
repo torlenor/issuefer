@@ -7,8 +7,6 @@ extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 
-extern crate walkdir;
-
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::Write;
@@ -19,7 +17,6 @@ use std::io::{BufRead, BufReader, BufWriter};
 
 use ini::Ini;
 use regex::Regex;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
 struct Todo {
@@ -30,22 +27,27 @@ struct Todo {
 }
 
 fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
-    // TODO: It shall ignore files and directories from .gitignore
-
     let mut source_files: Vec<String> = Vec::new();
 
     let current_dir = env::current_dir()?;
 
-    for entry in WalkDir::new(current_dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
     {
-        let f_path = entry.path().to_string_lossy();
-        let _sec = entry.metadata()?.modified()?;
-
-        if f_path.ends_with(".rs") || f_path.ends_with(".go") {
-            source_files.push(f_path.to_string());
+        let output = std::process::Command::new("git")
+            .args(&["ls-files"])
+            .output();
+        match output {
+            Ok(_v) => {
+                if _v.status.success() {
+                    for line in String::from_utf8(_v.stdout).unwrap().lines() {
+                        source_files.push(format!(
+                            "{}/{}",
+                            current_dir.to_str().unwrap(),
+                            line.to_string()
+                        ));
+                    }
+                }
+            }
+            Err(e) => println!("Error when executing git ls-files: {:?}", e),
         }
     }
 
@@ -272,30 +274,38 @@ fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
 
 fn print_todos(todos: &[Todo]) {
     println!("Found the following TODOs:");
-    for todo in todos {
-        if todo.issue_number > 0 {
-            println!(
-                "{}:{}: Tracked TODO {}: {}",
-                todo.file_path,
-                todo.line_number + 1,
-                todo.issue_number,
-                todo.title
-            )
-        } else {
-            println!(
-                "{}:{}: Untracked TODO: {}",
-                todo.file_path,
-                todo.line_number + 1,
-                todo.title
-            )
+    if todos.is_empty() {
+        println!("None");
+    } else {
+        for todo in todos {
+            if todo.issue_number > 0 {
+                println!(
+                    "{}:{}: Tracked TODO (#{}): {}",
+                    todo.file_path,
+                    todo.line_number + 1,
+                    todo.issue_number,
+                    todo.title
+                )
+            } else {
+                println!(
+                    "{}:{}: Untracked TODO: {}",
+                    todo.file_path,
+                    todo.line_number + 1,
+                    todo.title
+                )
+            }
         }
     }
 }
 
 fn print_github_issues(github_issues: &[GitHubIssue]) {
     println!("\nFound the following already existing GitHub issues:");
-    for issue in github_issues {
-        println!("#{} {} ({})", issue.number, issue.title, issue.state);
+    if github_issues.is_empty() {
+        println!("None");
+    } else {
+        for issue in github_issues {
+            println!("#{} {} ({})", issue.number, issue.title, issue.state);
+        }
     }
 }
 
@@ -426,7 +436,9 @@ fn commit(file_path: &str, issue_number: i64) {
 fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
     println!(
         "Assigning TODO in {}:{} the issue number {}",
-        todo.file_path, todo.line_number, issue_number
+        todo.file_path,
+        todo.line_number + 1,
+        issue_number
     );
     let output_file_path = format!("{}.issufer", &todo.file_path);
     {
@@ -450,6 +462,9 @@ fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
 }
 
 fn create_github_issues_from_todos(todos_to_create: &[Todo]) {
+    if todos_to_create.is_empty() {
+        return;
+    }
     println!("Creating GitHub issues from TODOs:");
     if let Some(token) = get_token_from_env() {
         if let Some((owner, repo)) = get_current_project_from_git_config() {
@@ -480,7 +495,7 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo]) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     if let Some((owner, repo)) = get_current_project_from_git_config() {
-        println!("IssueFER running for GitHub project {}/{}\n", owner, repo);
+        println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
     } else {
         return Ok(());
     }
