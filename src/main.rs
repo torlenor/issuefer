@@ -2,6 +2,7 @@ extern crate ini;
 extern crate regex;
 extern crate reqwest;
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
@@ -10,25 +11,22 @@ extern crate walkdir;
 
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::io::Write;
 use std::{env, io};
 
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
 
 use ini::Ini;
 use regex::Regex;
 use walkdir::WalkDir;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Todo {
+    file_path: String,
+    line_number: usize,
     title: String,
     issue_number: u16,
-}
-
-#[derive(Debug)]
-struct SourceCodeFile {
-    file_path: String,
-    todos: Vec<(usize, Todo)>, // [line_number, Todo]
 }
 
 fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
@@ -54,7 +52,7 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
     Ok(source_files)
 }
 
-fn parse_line(line: &str) -> Option<Todo> {
+fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
     lazy_static! {
         static ref TODO_RE: Regex = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
         static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
@@ -62,6 +60,8 @@ fn parse_line(line: &str) -> Option<Todo> {
 
     if let Some(x) = TODO_RE.captures(line) {
         let t = Todo {
+            file_path: file_path.to_string(),
+            line_number,
             title: x.get(1).map_or("", |m| m.as_str()).to_string(),
             issue_number: 0,
         };
@@ -76,6 +76,8 @@ fn parse_line(line: &str) -> Option<Todo> {
             .parse::<u16>()
             .unwrap();
         let t = Todo {
+            file_path: file_path.to_string(),
+            line_number,
             title: x.get(2).map_or("", |m| m.as_str()).to_string(),
             issue_number,
         };
@@ -84,33 +86,31 @@ fn parse_line(line: &str) -> Option<Todo> {
     None
 }
 
-fn get_todos_from_source_code_file(source_file: &str) -> SourceCodeFile {
+fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
     // TODO: Handle error better
     let f = File::open(source_file).expect("Unable to open file");
     let f = BufReader::new(f);
 
-    let mut file = SourceCodeFile {
-        file_path: source_file.to_string(),
-        todos: Vec::new(),
-    };
+    let mut todos = Vec::new();
+
     for (cnt, line) in f.lines().enumerate() {
         let line = line.expect("Unable to read line");
-        let result = parse_line(&line);
-        if let Some(x) = result {
-            file.todos.push((cnt, x))
+        let result = parse_line(source_file, cnt, &line);
+        if let Some(todo) = result {
+            todos.push(todo)
         }
     }
 
-    file
+    todos
 }
 
-fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<SourceCodeFile> {
-    let mut source_code_todos = Vec::new();
+fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
+    let mut all_todos = Vec::new();
     for source_file in source_files {
-        let source_file_todos = get_todos_from_source_code_file(source_file);
-        source_code_todos.push(source_file_todos);
+        let todos = get_todos_from_source_code_file(source_file);
+        all_todos.extend(todos);
     }
-    source_code_todos
+    all_todos
 }
 
 fn parse_git_config(url: &str) -> Option<(String, String)> {
@@ -139,9 +139,9 @@ fn get_current_project_from_git_config() -> Option<(String, String)> {
     parse_git_config(url)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct GitHubRepositoryIssues {
+pub struct GitHubIssue {
     pub url: String,
     #[serde(rename = "repository_url")]
     pub repository_url: String,
@@ -174,10 +174,10 @@ pub struct GitHubRepositoryIssues {
     pub closed_at: ::serde_json::Value,
     #[serde(rename = "author_association")]
     pub author_association: String,
-    pub body: String,
+    pub body: ::serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub login: String,
@@ -215,7 +215,7 @@ pub struct User {
     pub site_admin: bool,
 }
 
-fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Vec<GitHubRepositoryIssues> {
+fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Option<Vec<GitHubIssue>> {
     // Doc: https://developer.github.com/v3/issues/#get-an-issue
     // TODO: Implement correct error handling
     // TODO: Implement support for pages in response
@@ -225,7 +225,7 @@ fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Vec<GitHubRep
         repo = repo
     );
     let client = reqwest::blocking::Client::new();
-    let response = client
+    let resp = client
         .get(&request_url)
         .header(
             reqwest::header::AUTHORIZATION,
@@ -235,8 +235,17 @@ fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Vec<GitHubRep
         .send()
         .unwrap();
 
-    let root: Vec<GitHubRepositoryIssues> = response.json().unwrap();
-    root
+    if resp.status().is_success() {
+        let text = resp.text().unwrap();
+        let deserialized: Vec<GitHubIssue> = serde_json::from_str(&text).unwrap();
+        return Some(deserialized);
+    } else if resp.status().is_server_error() {
+        println!("server error!");
+    } else {
+        println!("Something else happened. Status: {:?}", resp.status());
+    }
+
+    None
 }
 
 fn get_token_from_env() -> Option<String> {
@@ -246,12 +255,12 @@ fn get_token_from_env() -> Option<String> {
     Some(env::var("GITHUB_TOKEN").unwrap())
 }
 
-fn fetch_current_github_issues() -> Option<Vec<GitHubRepositoryIssues>> {
+fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
     get_current_project_from_git_config();
 
     if let Some(x) = get_token_from_env() {
         if let Some((owner, repo)) = get_current_project_from_git_config() {
-            Some(get_issues_from_github(&x, &owner, &repo))
+            get_issues_from_github(&x, &owner, &repo)
         } else {
             None
         }
@@ -261,67 +270,220 @@ fn fetch_current_github_issues() -> Option<Vec<GitHubRepositoryIssues>> {
     }
 }
 
-fn print_todos(source_code_todos: &[SourceCodeFile]) {
-    println!("Found the following TODOs for the current project:");
-    for file in source_code_todos {
-        for todo in &file.todos {
-            if todo.1.issue_number > 0 {
-                println!(
-                    "{}:{}: Tracked TODO {}: {}",
-                    file.file_path,
-                    todo.0 + 1,
-                    todo.1.issue_number,
-                    todo.1.title
-                )
-            } else {
-                println!(
-                    "{}:{}: Untracked TODO: {}",
-                    file.file_path,
-                    todo.0 + 1,
-                    todo.1.title
-                )
-            }
+fn print_todos(todos: &[Todo]) {
+    println!("Found the following TODOs:");
+    for todo in todos {
+        if todo.issue_number > 0 {
+            println!(
+                "{}:{}: Tracked TODO {}: {}",
+                todo.file_path,
+                todo.line_number + 1,
+                todo.issue_number,
+                todo.title
+            )
+        } else {
+            println!(
+                "{}:{}: Untracked TODO: {}",
+                todo.file_path,
+                todo.line_number + 1,
+                todo.title
+            )
         }
     }
 }
 
-fn print_github_issues(github_issues: &[GitHubRepositoryIssues]) {
-    println!("\nFound the following GitHub issues for the current project:");
+fn print_github_issues(github_issues: &[GitHubIssue]) {
+    println!("\nFound the following already existing GitHub issues:");
     for issue in github_issues {
         println!("#{} {} ({})", issue.number, issue.title, issue.state);
     }
 }
 
-fn find_github_issue_by_title(github_issues: &[GitHubRepositoryIssues], title: &str) {
-    println!(
-        "Find in issues by title: {:?}",
-        github_issues.iter().find(|&x| x.title == title)
-    );
+// find_github_issue_by_title searches a list of GitHub issues by title and returns true if it finds an issue.
+fn find_github_issue_by_title(github_issues: &[GitHubIssue], title: &str) -> bool {
+    if let Some(_issue) = github_issues.iter().find(|&x| x.title == title) {
+        return true;
+    }
+    false
 }
 
-fn find_github_issue_by_number(github_issues: &[GitHubRepositoryIssues], number: &u16) {
-    println!(
-        "Find 2 in issues by number: {:?}",
-        github_issues.iter().find(|&x| x.number == *number as i64)
-    );
+fn compare_todos_and_issues(todos: &[Todo], github_issues: &[GitHubIssue]) -> Vec<Todo> {
+    let mut todos_to_create: Vec<Todo> = Vec::new();
+
+    for todo in todos {
+        if todo.issue_number == 0 && !find_github_issue_by_title(github_issues, &todo.title) {
+            todos_to_create.push(todo.clone());
+        }
+    }
+
+    todos_to_create
 }
 
-fn compare_todos_and_issues(
-    source_code_todos: &[SourceCodeFile],
-    github_issues: &[GitHubRepositoryIssues],
-) {
-    for file in source_code_todos {
-        for (_line, todo) in &file.todos {
-            if todo.issue_number > 0 {
-                find_github_issue_by_number(github_issues, &todo.issue_number)
-            } else {
-                find_github_issue_by_title(github_issues, &todo.title)
-            }
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedIssue {
+    pub url: String,
+    #[serde(rename = "repository_url")]
+    pub repository_url: String,
+    #[serde(rename = "labels_url")]
+    pub labels_url: String,
+    #[serde(rename = "comments_url")]
+    pub comments_url: String,
+    #[serde(rename = "events_url")]
+    pub events_url: String,
+    #[serde(rename = "html_url")]
+    pub html_url: String,
+    pub id: i64,
+    #[serde(rename = "node_id")]
+    pub node_id: String,
+    pub number: i64,
+    pub title: String,
+    pub user: User,
+    pub labels: Vec<::serde_json::Value>,
+    pub state: String,
+    pub locked: bool,
+    pub assignee: ::serde_json::Value,
+    pub assignees: Vec<::serde_json::Value>,
+    pub milestone: ::serde_json::Value,
+    pub comments: i64,
+    #[serde(rename = "created_at")]
+    pub created_at: String,
+    #[serde(rename = "updated_at")]
+    pub updated_at: String,
+    #[serde(rename = "closed_at")]
+    pub closed_at: ::serde_json::Value,
+    #[serde(rename = "author_association")]
+    pub author_association: String,
+    pub body: ::serde_json::Value,
+    #[serde(rename = "closed_by")]
+    pub closed_by: ::serde_json::Value,
+}
+
+fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Option<CreatedIssue> {
+    // TODO: The function that creates GitHub issues needs proper error handling
+    println!(
+        "Creating issue for {}/{} with title '{}'",
+        owner, repo, title
+    );
+    let issue_body = json!({
+    "title": title,
+    });
+
+    let request_url = format!(
+        "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
+        owner = owner,
+        repo = repo
+    );
+    let resp = reqwest::blocking::Client::new()
+        .post(&request_url)
+        .json(&issue_body)
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("token {token}", token = token),
+        )
+        .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
+        .send()
+        .unwrap();
+
+    if resp.status().is_success() {
+        let issue: CreatedIssue = resp.json().unwrap();
+        return Some(issue);
+    } else if resp.status().is_server_error() {
+        println!("server error!");
+    } else {
+        println!("Something else happened. Status: {:?}", resp.status());
+    }
+
+    None
+}
+
+fn commit(file_path: &str, issue_number: i64) {
+    println!(
+        "Creating a new commit for file {} and issue #{}",
+        file_path, issue_number
+    );
+    {
+        let output = std::process::Command::new("git")
+            .args(&["add", file_path])
+            .output();
+        match output {
+            Ok(_v) => {}
+            Err(e) => println!("Error when executing git add: {:?}", e),
+        }
+    }
+
+    {
+        let output = std::process::Command::new("git")
+            .args(&["commit", "-m", &format!("TODO #{}", issue_number)])
+            .output();
+        match output {
+            Ok(_v) => {}
+            Err(e) => println!("Error when executing git commit: {:?}", e),
         }
     }
 }
 
+fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
+    println!(
+        "Assigning TODO in {}:{} the issue number {}",
+        todo.file_path, todo.line_number, issue_number
+    );
+    let output_file_path = format!("{}.issufer", &todo.file_path);
+    {
+        let input_file = File::open(&todo.file_path)?;
+        let reader = BufReader::new(input_file);
+        let output_file = File::create(&output_file_path)?;
+        let mut writer = BufWriter::new(output_file);
+        for (cnt, line) in reader.lines().enumerate() {
+            if cnt == todo.line_number {
+                let new_line = line?.replace("// TODO:", &format!("// TODO (#{}):", issue_number));
+                writeln!(writer, "{}", new_line)?;
+            } else {
+                writeln!(writer, "{}", line?)?;
+            }
+        }
+    }
+
+    std::fs::rename(&output_file_path, &todo.file_path)?;
+
+    Ok(())
+}
+
+fn create_github_issues_from_todos(todos_to_create: &[Todo]) {
+    println!("Creating GitHub issues from TODOs:");
+    if let Some(token) = get_token_from_env() {
+        if let Some((owner, repo)) = get_current_project_from_git_config() {
+            for todo in todos_to_create {
+                if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title) {
+                    println!(
+                        "Issue #{} with title '{}' created successfully",
+                        new_issue.number, new_issue.title
+                    );
+                    update_file(&todo, new_issue.number).unwrap();
+                    commit(&todo.file_path, new_issue.number);
+                } else {
+                    println!(
+                        "Could not create new GitHub issue for TODO {}:{}: {}",
+                        todo.file_path,
+                        todo.line_number + 1,
+                        todo.title
+                    );
+                }
+            }
+        } else {
+            println!("No valid GitHub project repository found in current directory.");
+        }
+    } else {
+        println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    if let Some((owner, repo)) = get_current_project_from_git_config() {
+        println!("IssueFER running for GitHub project {}/{}\n", owner, repo);
+    } else {
+        return Ok(());
+    }
     let source_files = get_all_source_code_files()?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
     print_todos(&source_code_todos);
@@ -329,15 +491,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let github_issues = fetch_current_github_issues();
     if let Some(issues) = github_issues {
         print_github_issues(&issues);
-        compare_todos_and_issues(&source_code_todos, &issues);
+        println!();
+        create_github_issues_from_todos(&compare_todos_and_issues(&source_code_todos, &issues));
     } else {
-        println!("Could not fetch GitHub issues for current project")
+        println!("Could not fetch GitHub issues for current project");
     }
 
-    // TODO: compare_todos_and_github_issues() has to be implemented
-    // TODO: create_new_github_issues() has to be implemented
-    // TODO (#123): update_source_code_and_commit() has to be implemented
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
+    // TODO: Add a --list/-l parameter and let Issuefer only list all the found TODOs
+    // TODO: Add a --ask/-a parameter so that Issuefer asks for every TODO if it shall report it
 
     Ok(())
 }
