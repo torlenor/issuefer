@@ -92,7 +92,7 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
 }
 
 fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
-    // TODO: Handle error better
+    // TODO: Handle errors when parsing source files for TODOs
     let f = File::open(source_file).expect("Unable to open file");
     let f = BufReader::new(f);
 
@@ -132,7 +132,7 @@ fn parse_git_config(url: &str) -> Option<(String, String)> {
 }
 
 fn get_current_project_from_git_config() -> Option<(String, String)> {
-    // TODO: implement proper error handling
+    // TODO: Implement proper error handling when reading git config
     // TODO: The used ini parser dies if it encounters a line starting with #, i.e., a comment
     let current_dir = env::current_dir().unwrap();
     let conf =
@@ -222,8 +222,8 @@ pub struct User {
 
 fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Option<Vec<GitHubIssue>> {
     // Doc: https://developer.github.com/v3/issues/#get-an-issue
-    // TODO: Implement correct error handling
-    // TODO: Implement support for pages in response
+    // TODO: Implement correct error handling when getting issues from GitHub
+    // TODO: Implement support for pages in response when retrieving GitHub issues
     let request_url = format!(
         "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
         owner = owner,
