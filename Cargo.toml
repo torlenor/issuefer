@@ -7,10 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lazy_static = "1.4.0"
 regex = "1"
 reqwest = { version = "0.10", features = ["json", "blocking"] }
 rust-ini = "0.15"
 serde = { version = "1.0", features = ["derive"] }
-walkdir = "2.3.1"
-serde_json = "1.0"
 serde_derive = "1.0.107"
+serde_json = "1.0"
+walkdir = "2.3.1"

@@ -3,6 +3,8 @@ extern crate regex;
 extern crate reqwest;
 extern crate serde_derive;
 extern crate serde_json;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate walkdir;
 
@@ -53,10 +55,12 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
 }
 
 fn parse_line(line: &str) -> Option<Todo> {
-    let re = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
-    let text = line;
+    lazy_static! {
+        static ref TODO_RE: Regex = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
+        static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
+    }
 
-    if let Some(x) = re.captures(text) {
+    if let Some(x) = TODO_RE.captures(line) {
         let t = Todo {
             title: x.get(1).map_or("", |m| m.as_str()).to_string(),
             issue_number: 0,
@@ -64,9 +68,7 @@ fn parse_line(line: &str) -> Option<Todo> {
         return Some(t);
     }
 
-    let re = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
-    let text = line;
-    if let Some(x) = re.captures(text) {
+    if let Some(x) = TODO_SEEN_RE.captures(line) {
         let issue_number = x
             .get(1)
             .map_or("0", |m| m.as_str())
@@ -259,12 +261,9 @@ fn fetch_current_github_issues() -> Option<Vec<GitHubRepositoryIssues>> {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let source_files = get_all_source_code_files()?;
-    let source_code_todos = get_all_todos_from_source_code_files(&source_files);
-
+fn print_todos(source_code_todos: &[SourceCodeFile]) {
     println!("Found the following TODOs for the current project:");
-    for file in &source_code_todos {
+    for file in source_code_todos {
         for todo in &file.todos {
             if todo.1.issue_number > 0 {
                 println!(
@@ -284,13 +283,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+}
 
+fn print_github_issues(github_issues: &[GitHubRepositoryIssues]) {
     println!("\nFound the following GitHub issues for the current project:");
-    let github_todos = fetch_current_github_issues();
-    if let Some(x) = github_todos {
-        for todo in x {
-            println!("#{} {}", todo.number, todo.title);
-        }
+    for todo in github_issues {
+        println!("#{} {}", todo.number, todo.title);
+    }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let source_files = get_all_source_code_files()?;
+    let source_code_todos = get_all_todos_from_source_code_files(&source_files);
+    print_todos(&source_code_todos);
+
+    let github_issues = fetch_current_github_issues();
+    if let Some(issues) = github_issues {
+        print_github_issues(&issues);
     } else {
         println!("Could not fetch GitHub issues for current project")
     }
@@ -298,6 +307,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // TODO: compare_todos_and_github_issues() has to be implemented
     // TODO: create_new_github_issues() has to be implemented
     // TODO (#123): update_source_code_and_commit() has to be implemented
+    // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
 
     Ok(())
 }
