@@ -7,6 +7,9 @@ extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 
+extern crate clap;
+use clap::{App, Arg};
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::Write;
@@ -272,28 +275,24 @@ fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
     }
 }
 
-fn print_todos(todos: &[Todo]) {
+fn print_todos(todos: &[Todo], tracked_only: bool) {
     println!("Found the following TODOs:");
-    if todos.is_empty() {
-        println!("None");
-    } else {
-        for todo in todos {
-            if todo.issue_number > 0 {
-                println!(
-                    "{}:{}: Tracked TODO (#{}): {}",
-                    todo.file_path,
-                    todo.line_number + 1,
-                    todo.issue_number,
-                    todo.title
-                )
-            } else {
-                println!(
-                    "{}:{}: Untracked TODO: {}",
-                    todo.file_path,
-                    todo.line_number + 1,
-                    todo.title
-                )
-            }
+    for todo in todos {
+        if todo.issue_number == 0 {
+            println!(
+                "{}:{}: Untracked TODO: {}",
+                todo.file_path,
+                todo.line_number + 1,
+                todo.title
+            );
+        } else if !tracked_only {
+            println!(
+                "{}:{}: Tracked TODO (#{}): {}",
+                todo.file_path,
+                todo.line_number + 1,
+                todo.issue_number,
+                todo.title
+            );
         }
     }
 }
@@ -494,27 +493,52 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo]) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let matches = App::new("IssueFER")
+        .version("0.1.0")
+        .author("Torlenor <torlenor@abyle.org>")
+        .about("Turns TODOs into GitHub issues")
+        .arg(
+            Arg::with_name("report")
+                .short("r")
+                .long("report")
+                .help("Report all newly found TODOs"),
+        )
+        .arg(
+            Arg::with_name("all")
+                .short("a")
+                .long("all")
+                .help("List all TODOs including already tracked"),
+        )
+        .get_matches();
+
+    let report = matches.is_present("report");
+    let all = matches.is_present("all");
+
     if let Some((owner, repo)) = get_current_project_from_git_config() {
         println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
     } else {
         return Ok(());
     }
+
     let source_files = get_all_source_code_files()?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
-    print_todos(&source_code_todos);
+    print_todos(&source_code_todos, !all);
 
-    let github_issues = fetch_current_github_issues();
-    if let Some(issues) = github_issues {
-        print_github_issues(&issues);
-        println!();
-        create_github_issues_from_todos(&compare_todos_and_issues(&source_code_todos, &issues));
+    if report {
+        let github_issues = fetch_current_github_issues();
+        if let Some(issues) = github_issues {
+            print_github_issues(&issues);
+            println!();
+            create_github_issues_from_todos(&compare_todos_and_issues(&source_code_todos, &issues));
+        } else {
+            println!("Could not fetch GitHub issues for current project");
+        }
     } else {
-        println!("Could not fetch GitHub issues for current project");
+        println!("\nTo report them run issuefer with the -r/--report flag");
     }
 
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
-    // TODO: Add a --list/-l parameter and let Issuefer only list all the found TODOs
-    // TODO: Add a --ask/-a parameter so that Issuefer asks for every TODO if it shall report it
+    // TODO: Add a --confirm/-c parameter so that Issuefer asks for every TODO if it shall report it
 
     Ok(())
 }
