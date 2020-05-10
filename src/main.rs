@@ -93,8 +93,6 @@ fn get_todos_from_source_code_file(source_file: &str) -> SourceCodeFile {
         file_path: source_file.to_string(),
         todos: Vec::new(),
     };
-    // let mut cnt: usize = 0;
-    // for line in f.lines() {
     for (cnt, line) in f.lines().enumerate() {
         let line = line.expect("Unable to read line");
         let result = parse_line(&line);
@@ -107,12 +105,12 @@ fn get_todos_from_source_code_file(source_file: &str) -> SourceCodeFile {
 }
 
 fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<SourceCodeFile> {
-    let mut soure_code_todos = Vec::new();
+    let mut source_code_todos = Vec::new();
     for source_file in source_files {
         let source_file_todos = get_todos_from_source_code_file(source_file);
-        soure_code_todos.push(source_file_todos);
+        source_code_todos.push(source_file_todos);
     }
-    soure_code_todos
+    source_code_todos
 }
 
 fn parse_git_config(url: &str) -> Option<(String, String)> {
@@ -218,9 +216,11 @@ pub struct User {
 }
 
 fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Vec<GitHubRepositoryIssues> {
-    // TODO: implement correct error handling
+    // Doc: https://developer.github.com/v3/issues/#get-an-issue
+    // TODO: Implement correct error handling
+    // TODO: Implement support for pages in response
     let request_url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/issues",
+        "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
         owner = owner,
         repo = repo
     );
@@ -287,8 +287,37 @@ fn print_todos(source_code_todos: &[SourceCodeFile]) {
 
 fn print_github_issues(github_issues: &[GitHubRepositoryIssues]) {
     println!("\nFound the following GitHub issues for the current project:");
-    for todo in github_issues {
-        println!("#{} {}", todo.number, todo.title);
+    for issue in github_issues {
+        println!("#{} {} ({})", issue.number, issue.title, issue.state);
+    }
+}
+
+fn find_github_issue_by_title(github_issues: &[GitHubRepositoryIssues], title: &str) {
+    println!(
+        "Find in issues by title: {:?}",
+        github_issues.iter().find(|&x| x.title == title)
+    );
+}
+
+fn find_github_issue_by_number(github_issues: &[GitHubRepositoryIssues], number: &u16) {
+    println!(
+        "Find 2 in issues by number: {:?}",
+        github_issues.iter().find(|&x| x.number == *number as i64)
+    );
+}
+
+fn compare_todos_and_issues(
+    source_code_todos: &[SourceCodeFile],
+    github_issues: &[GitHubRepositoryIssues],
+) {
+    for file in source_code_todos {
+        for (_line, todo) in &file.todos {
+            if todo.issue_number > 0 {
+                find_github_issue_by_number(github_issues, &todo.issue_number)
+            } else {
+                find_github_issue_by_title(github_issues, &todo.title)
+            }
+        }
     }
 }
 
@@ -300,6 +329,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let github_issues = fetch_current_github_issues();
     if let Some(issues) = github_issues {
         print_github_issues(&issues);
+        compare_todos_and_issues(&source_code_todos, &issues);
     } else {
         println!("Could not fetch GitHub issues for current project")
     }
