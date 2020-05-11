@@ -11,22 +11,63 @@ extern crate clap;
 use clap::{App, Arg};
 
 use serde::{Deserialize, Serialize};
-use std::error::Error;
-use std::io::Write;
-use std::{env, io};
 
+use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::{env, fmt, io};
 
 use ini::Ini;
 use regex::Regex;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Todo {
     file_path: String,
     line_number: usize,
     title: String,
     issue_number: u16,
+}
+
+impl fmt::Display for Todo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.issue_number == 0 {
+            write!(
+                f,
+                "{}:{}: TODO: {}",
+                self.file_path,
+                self.line_number + 1,
+                self.title
+            )
+        } else {
+            write!(
+                f,
+                "{}:{}: TODO (#{}): {}",
+                self.file_path,
+                self.line_number + 1,
+                self.issue_number,
+                self.title
+            )
+        }
+    }
+}
+
+fn ask_yes_no(question: &str) -> bool {
+    let mut ch = ' ';
+    while ch != 'y' && ch != 'n' {
+        println!("{} [y/n]", question);
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line).is_ok() {
+            line = line.trim().to_string();
+            if let Some(c) = line.chars().next() {
+                ch = c;
+            }
+        }
+    }
+    if ch == 'y' {
+        return true;
+    }
+
+    false
 }
 
 fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
@@ -275,39 +316,6 @@ fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
     }
 }
 
-fn print_todos(todos: &[Todo], tracked_only: bool) {
-    println!("Found the following TODOs:");
-    for todo in todos {
-        if todo.issue_number == 0 {
-            println!(
-                "{}:{}: Untracked TODO: {}",
-                todo.file_path,
-                todo.line_number + 1,
-                todo.title
-            );
-        } else if !tracked_only {
-            println!(
-                "{}:{}: Tracked TODO (#{}): {}",
-                todo.file_path,
-                todo.line_number + 1,
-                todo.issue_number,
-                todo.title
-            );
-        }
-    }
-}
-
-fn print_github_issues(github_issues: &[GitHubIssue]) {
-    println!("\nFound the following already existing GitHub issues:");
-    if github_issues.is_empty() {
-        println!("None");
-    } else {
-        for issue in github_issues {
-            println!("#{} {} ({})", issue.number, issue.title, issue.state);
-        }
-    }
-}
-
 // find_github_issue_by_title searches a list of GitHub issues by title and returns true if it finds an issue.
 fn find_github_issue_by_title(github_issues: &[GitHubIssue], title: &str) -> bool {
     if let Some(_issue) = github_issues.iter().find(|&x| x.title == title) {
@@ -370,10 +378,6 @@ pub struct CreatedIssue {
 
 fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Option<CreatedIssue> {
     // TODO: The function that creates GitHub issues needs proper error handling
-    println!(
-        "Creating issue for {}/{} with title '{}'",
-        owner, repo, title
-    );
     let issue_body = json!({
     "title": title,
     });
@@ -407,10 +411,6 @@ fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Opt
 }
 
 fn commit(file_path: &str, issue_number: i64) {
-    println!(
-        "Creating a new commit for file {} and issue #{}",
-        file_path, issue_number
-    );
     {
         let output = std::process::Command::new("git")
             .args(&["add", file_path])
@@ -433,12 +433,6 @@ fn commit(file_path: &str, issue_number: i64) {
 }
 
 fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
-    println!(
-        "Assigning TODO in {}:{} the issue number {}",
-        todo.file_path,
-        todo.line_number + 1,
-        issue_number
-    );
     let output_file_path = format!("{}.issufer", &todo.file_path);
     {
         let input_file = File::open(&todo.file_path)?;
@@ -460,28 +454,32 @@ fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn create_github_issues_from_todos(todos_to_create: &[Todo]) {
+fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
     if todos_to_create.is_empty() {
         return;
     }
-    println!("Creating GitHub issues from TODOs:");
+    println!("Found the following unreported TODOs:");
     if let Some(token) = get_token_from_env() {
         if let Some((owner, repo)) = get_current_project_from_git_config() {
             for todo in todos_to_create {
-                if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title) {
-                    println!(
-                        "Issue #{} with title '{}' created successfully",
-                        new_issue.number, new_issue.title
-                    );
-                    update_file(&todo, new_issue.number).unwrap();
-                    commit(&todo.file_path, new_issue.number);
-                } else {
-                    println!(
-                        "Could not create new GitHub issue for TODO {}:{}: {}",
-                        todo.file_path,
-                        todo.line_number + 1,
-                        todo.title
-                    );
+                println!("{}", todo);
+                if force_yes || ask_yes_no("Do you want to report this TODO?") {
+                    if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title)
+                    {
+                        update_file(&todo, new_issue.number).unwrap();
+                        commit(&todo.file_path, new_issue.number);
+                        println!(
+                            "Issue #{} with title '{}' created successfully",
+                            new_issue.number, new_issue.title
+                        );
+                    } else {
+                        println!(
+                            "Could not create new GitHub issue for TODO {}:{}: {}",
+                            todo.file_path,
+                            todo.line_number + 1,
+                            todo.title
+                        );
+                    }
                 }
             }
         } else {
@@ -504,15 +502,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("Report all newly found TODOs"),
         )
         .arg(
-            Arg::with_name("all")
-                .short("a")
-                .long("all")
-                .help("List all TODOs including already tracked"),
+            Arg::with_name("force-yes")
+                .short("y")
+                .long("force-yes")
+                .help("Answer every question with yes (e.g., report all TODOs as issues)"),
         )
         .get_matches();
 
     let report = matches.is_present("report");
-    let all = matches.is_present("all");
+    let force_yes = matches.is_present("force-yes");
 
     if let Some((owner, repo)) = get_current_project_from_git_config() {
         println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
@@ -522,14 +520,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let source_files = get_all_source_code_files()?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
-    print_todos(&source_code_todos, !all);
 
     if report {
         let github_issues = fetch_current_github_issues();
         if let Some(issues) = github_issues {
-            print_github_issues(&issues);
-            println!();
-            create_github_issues_from_todos(&compare_todos_and_issues(&source_code_todos, &issues));
+            create_github_issues_from_todos(
+                &compare_todos_and_issues(&source_code_todos, &issues),
+                force_yes,
+            );
         } else {
             println!("Could not fetch GitHub issues for current project");
         }
@@ -538,7 +536,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
-    // TODO: Add a --confirm/-c parameter so that Issuefer asks for every TODO if it shall report it
 
     Ok(())
 }
