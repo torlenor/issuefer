@@ -424,7 +424,7 @@ fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Opt
     None
 }
 
-fn commit(file_path: &str, issue_number: i64) {
+fn commit(file_path: &str, message: &str) {
     {
         let output = std::process::Command::new("git")
             .args(&["add", file_path])
@@ -437,7 +437,7 @@ fn commit(file_path: &str, issue_number: i64) {
 
     {
         let output = std::process::Command::new("git")
-            .args(&["commit", "-m", &format!("Add TODO #{}", issue_number)])
+            .args(&["commit", "-m", message])
             .output();
         match output {
             Ok(_v) => {}
@@ -446,26 +446,12 @@ fn commit(file_path: &str, issue_number: i64) {
     }
 }
 
-fn commit_delete(file_path: &str, issue_number: u16) {
-    {
-        let output = std::process::Command::new("git")
-            .args(&["add", file_path])
-            .output();
-        match output {
-            Ok(_v) => {}
-            Err(e) => println!("Error when executing git add: {:?}", e),
-        }
-    }
+fn commit_add(file_path: &str, issue_number: i64) {
+    commit(file_path, &format!("Add TODO #{}", issue_number));
+}
 
-    {
-        let output = std::process::Command::new("git")
-            .args(&["commit", "-m", &format!("Remove TODO #{}", issue_number)])
-            .output();
-        match output {
-            Ok(_v) => {}
-            Err(e) => println!("Error when executing git commit: {:?}", e),
-        }
-    }
+fn commit_delete(file_path: &str, issue_number: u16) {
+    commit(file_path, &format!("Remove TODO #{}", issue_number));
 }
 
 fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
@@ -522,7 +508,7 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
                     if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title)
                     {
                         update_file(&todo, new_issue.number).unwrap();
-                        commit(&todo.file_path, new_issue.number);
+                        commit_add(&todo.file_path, new_issue.number);
                         println!(
                             "Issue #{} with title '{}' created successfully",
                             new_issue.number, new_issue.title
