@@ -613,8 +613,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some((owner, repo)) = get_current_project_from_git_config() {
         println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
     } else {
-        println!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
-        return Ok(());
+        eprintln!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
+        std::process::exit(1);
     }
 
     let source_files = get_all_source_code_files()?;
@@ -646,7 +646,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("To clean them up run issuefer with the -c/--cleanup flag");
         }
     } else {
-        println!("Could not fetch GitHub issues for current project");
+        eprintln!("Could not fetch GitHub issues for current project");
+        std::process::exit(1);
     }
 
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
