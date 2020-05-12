@@ -454,7 +454,7 @@ fn commit_delete(file_path: &str, issue_number: u16) {
     commit(file_path, &format!("Remove TODO #{}", issue_number));
 }
 
-fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
+fn update_file(todo: &Todo, issue_number: i64, delete: bool) -> Result<(), io::Error> {
     let output_file_path = format!("{}.issufer", &todo.file_path);
     {
         let input_file = File::open(&todo.file_path)?;
@@ -462,29 +462,10 @@ fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
         let output_file = File::create(&output_file_path)?;
         let mut writer = BufWriter::new(output_file);
         for (cnt, line) in reader.lines().enumerate() {
-            if cnt == todo.line_number {
+            if cnt == todo.line_number && !delete {
                 let new_line = line?.replace("// TODO:", &format!("// TODO (#{}):", issue_number));
                 writeln!(writer, "{}", new_line)?;
             } else {
-                writeln!(writer, "{}", line?)?;
-            }
-        }
-    }
-
-    std::fs::rename(&output_file_path, &todo.file_path)?;
-
-    Ok(())
-}
-
-fn update_file_delete_todo(todo: &Todo) -> Result<(), io::Error> {
-    let output_file_path = format!("{}.issufer", &todo.file_path);
-    {
-        let input_file = File::open(&todo.file_path)?;
-        let reader = BufReader::new(input_file);
-        let output_file = File::create(&output_file_path)?;
-        let mut writer = BufWriter::new(output_file);
-        for (cnt, line) in reader.lines().enumerate() {
-            if cnt != todo.line_number {
                 writeln!(writer, "{}", line?)?;
             }
         }
@@ -507,19 +488,14 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
                 if force_yes || ask_yes_no("Do you want to report this TODO?") {
                     if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title)
                     {
-                        update_file(&todo, new_issue.number).unwrap();
+                        update_file(&todo, new_issue.number, false).unwrap();
                         commit_add(&todo.file_path, new_issue.number);
                         println!(
                             "Issue #{} with title '{}' created successfully",
                             new_issue.number, new_issue.title
                         );
                     } else {
-                        println!(
-                            "Could not create new GitHub issue for TODO {}:{}: {}",
-                            todo.file_path,
-                            todo.line_number + 1,
-                            todo.title
-                        );
+                        println!("Could not create new GitHub issue for '{}'", todo);
                     }
                 }
             }
@@ -539,7 +515,7 @@ fn remove_todos(todos_to_remove: &[Todo], force_yes: bool) {
     for todo in todos_to_remove {
         println!("{}", todo);
         if force_yes || ask_yes_no("Do you want to remove this TODO?") {
-            update_file_delete_todo(&todo).unwrap();
+            update_file(&todo, 0, true).unwrap();
             commit_delete(&todo.file_path, todo.issue_number);
             println!(
                 "Todo to issue #{} with title '{}' removed successfully",
@@ -618,14 +594,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             for todo in compare_todos_and_issues(&source_code_todos, &issues) {
                 println!("{}", todo);
             }
-            println!("\nTo report them run issuefer with the -r/--report flag");
+            println!("To report them run issuefer with the -r/--report flag");
         }
         println!();
         if cleanup {
             let todos_to_cleanup = find_todos_to_cleanup(&source_code_todos, &issues);
             remove_todos(&todos_to_cleanup, force_yes);
         } else {
-            println!("\nFound the following TODOs to clean up:");
+            println!("Found the following TODOs to clean up:");
             for todo in find_todos_to_cleanup(&source_code_todos, &issues) {
                 println!("{}", todo);
             }
@@ -637,6 +613,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
+    // TODO: Support C style comments with /* */
+    // TODO: Support TODO comments with following text that shall then be added to the body of the issue
 
     Ok(())
 }
