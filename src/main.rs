@@ -175,14 +175,21 @@ fn parse_git_config(url: &str) -> Option<(String, String)> {
 fn get_current_project_from_git_config() -> Option<(String, String)> {
     // TODO: Implement proper error handling when reading git config
     // TODO: The used ini parser dies if it encounters a line starting with #, i.e., a comment
-    let current_dir = env::current_dir().unwrap();
-    let conf =
-        Ini::load_from_file(format!("{}/.git/config", current_dir.to_str().unwrap())).unwrap();
+    let current_dir = env::current_dir();
+    if current_dir.is_ok() {
+        let path = format!("{}/.git/config", current_dir.unwrap().to_str().unwrap());
+        if !std::path::Path::new(&path).exists() {
+            return None;
+        }
 
-    let section = conf.section(Some("remote \"origin\"")).unwrap();
-    let url = section.get("url").unwrap();
+        let conf = Ini::load_from_file(path).unwrap();
 
-    parse_git_config(url)
+        let section = conf.section(Some("remote \"origin\"")).unwrap();
+        let url = section.get("url").unwrap();
+        parse_git_config(url)
+    } else {
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -302,12 +309,11 @@ fn get_token_from_env() -> Option<String> {
 }
 
 fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
-    get_current_project_from_git_config();
-
     if let Some(x) = get_token_from_env() {
         if let Some((owner, repo)) = get_current_project_from_git_config() {
             get_issues_from_github(&x, &owner, &repo)
         } else {
+            println!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
             None
         }
     } else {
@@ -322,6 +328,14 @@ fn find_github_issue_by_title(github_issues: &[GitHubIssue], title: &str) -> boo
         return true;
     }
     false
+}
+
+// find_github_issue_by_number searches a list of GitHub issues by issue number and returns a copy if it finds it.
+fn find_github_issue_by_number(github_issues: &[GitHubIssue], number: i64) -> Option<GitHubIssue> {
+    if let Some(issue) = github_issues.iter().find(|&x| x.number == number) {
+        return Some(issue.clone());
+    }
+    None
 }
 
 fn compare_todos_and_issues(todos: &[Todo], github_issues: &[GitHubIssue]) -> Vec<Todo> {
@@ -423,7 +437,29 @@ fn commit(file_path: &str, issue_number: i64) {
 
     {
         let output = std::process::Command::new("git")
-            .args(&["commit", "-m", &format!("TODO #{}", issue_number)])
+            .args(&["commit", "-m", &format!("Add TODO #{}", issue_number)])
+            .output();
+        match output {
+            Ok(_v) => {}
+            Err(e) => println!("Error when executing git commit: {:?}", e),
+        }
+    }
+}
+
+fn commit_delete(file_path: &str, issue_number: u16) {
+    {
+        let output = std::process::Command::new("git")
+            .args(&["add", file_path])
+            .output();
+        match output {
+            Ok(_v) => {}
+            Err(e) => println!("Error when executing git add: {:?}", e),
+        }
+    }
+
+    {
+        let output = std::process::Command::new("git")
+            .args(&["commit", "-m", &format!("Remove TODO #{}", issue_number)])
             .output();
         match output {
             Ok(_v) => {}
@@ -444,6 +480,25 @@ fn update_file(todo: &Todo, issue_number: i64) -> Result<(), io::Error> {
                 let new_line = line?.replace("// TODO:", &format!("// TODO (#{}):", issue_number));
                 writeln!(writer, "{}", new_line)?;
             } else {
+                writeln!(writer, "{}", line?)?;
+            }
+        }
+    }
+
+    std::fs::rename(&output_file_path, &todo.file_path)?;
+
+    Ok(())
+}
+
+fn update_file_delete_todo(todo: &Todo) -> Result<(), io::Error> {
+    let output_file_path = format!("{}.issufer", &todo.file_path);
+    {
+        let input_file = File::open(&todo.file_path)?;
+        let reader = BufReader::new(input_file);
+        let output_file = File::create(&output_file_path)?;
+        let mut writer = BufWriter::new(output_file);
+        for (cnt, line) in reader.lines().enumerate() {
+            if cnt != todo.line_number {
                 writeln!(writer, "{}", line?)?;
             }
         }
@@ -490,6 +545,42 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
     }
 }
 
+fn remove_todos(todos_to_remove: &[Todo], force_yes: bool) {
+    if todos_to_remove.is_empty() {
+        return;
+    }
+    println!("Found the following TODOs to remove:");
+    for todo in todos_to_remove {
+        println!("{}", todo);
+        if force_yes || ask_yes_no("Do you want to remove this TODO?") {
+            update_file_delete_todo(&todo).unwrap();
+            commit_delete(&todo.file_path, todo.issue_number);
+            println!(
+                "Todo to issue #{} with title '{}' removed successfully",
+                todo.issue_number, todo.title
+            );
+        }
+    }
+}
+
+fn find_todos_to_cleanup(todos: &[Todo], github_issues: &[GitHubIssue]) -> Vec<Todo> {
+    let mut todos_to_cleanup: Vec<Todo> = Vec::new();
+
+    for todo in todos {
+        if todo.issue_number > 0 {
+            if let Some(issue) =
+                find_github_issue_by_number(github_issues, todo.issue_number as i64)
+            {
+                if issue.state == "closed" {
+                    todos_to_cleanup.push(todo.clone());
+                }
+            }
+        }
+    }
+
+    todos_to_cleanup
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let matches = App::new("IssueFER")
         .version("0.1.0")
@@ -502,6 +593,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("Report all newly found TODOs"),
         )
         .arg(
+            Arg::with_name("cleanup")
+                .short("c")
+                .long("cleanup")
+                .help("Cleanup issues to closed TODOs"),
+        )
+        .arg(
             Arg::with_name("force-yes")
                 .short("y")
                 .long("force-yes")
@@ -510,29 +607,46 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     let report = matches.is_present("report");
+    let cleanup = matches.is_present("cleanup");
     let force_yes = matches.is_present("force-yes");
 
     if let Some((owner, repo)) = get_current_project_from_git_config() {
         println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
     } else {
+        println!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
         return Ok(());
     }
 
     let source_files = get_all_source_code_files()?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
 
-    if report {
-        let github_issues = fetch_current_github_issues();
-        if let Some(issues) = github_issues {
+    let github_issues = fetch_current_github_issues();
+    if let Some(issues) = github_issues {
+        if report {
             create_github_issues_from_todos(
                 &compare_todos_and_issues(&source_code_todos, &issues),
                 force_yes,
             );
         } else {
-            println!("Could not fetch GitHub issues for current project");
+            println!("Found the following unreported TODOs:");
+            for todo in compare_todos_and_issues(&source_code_todos, &issues) {
+                println!("{}", todo);
+            }
+            println!("\nTo report them run issuefer with the -r/--report flag");
+        }
+        println!();
+        if cleanup {
+            let todos_to_cleanup = find_todos_to_cleanup(&source_code_todos, &issues);
+            remove_todos(&todos_to_cleanup, force_yes);
+        } else {
+            println!("\nFound the following TODOs to clean up:");
+            for todo in find_todos_to_cleanup(&source_code_todos, &issues) {
+                println!("{}", todo);
+            }
+            println!("To clean them up run issuefer with the -c/--cleanup flag");
         }
     } else {
-        println!("\nTo report them run issuefer with the -r/--report flag");
+        println!("Could not fetch GitHub issues for current project");
     }
 
     // TODO: It shall be possible to ignore TODOs via CLI, maybe mark them with // TODO (II): in the file
