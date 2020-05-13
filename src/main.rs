@@ -488,7 +488,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // TODO (#6): Add option to ignore TODOs, mark them with '// TODO (II):'
     // TODO (#7): Support more than just // at the beginning of the TODO lines
     // TODO (#8): C style multi-line comments with /* */ should be supported
-    // TODO: When encountering TODOs followed by commented lines  those lines shall be added to the body of the issue
+    // TODO (#9): When encountering TODOs followed by commented lines  those lines shall be added to the body of the issue
     // TODO: Make it possible to ignore files by their extension, .e.g., .md
 
     Ok(())
