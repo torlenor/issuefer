@@ -485,7 +485,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    // TODO: Add option to ignore TODOs, mark them with '// TODO (II):'
+    // TODO (#6): Add option to ignore TODOs, mark them with '// TODO (II):'
     // TODO: Support more than just // at the beginning of the TODO lines
     // TODO: C style multi-line comments with /* */ should be supported
     // TODO: When encountering TODOs followed by commented lines  those lines shall be added to the body of the issue
