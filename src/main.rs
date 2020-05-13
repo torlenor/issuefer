@@ -105,7 +105,7 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
 }
 
 fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
-    // TODO: Implement proper error handling when parsing source files
+    // TODO (#1): Implement proper error handling when parsing source files
     let f = File::open(source_file).expect("Unable to open file");
     let f = BufReader::new(f);
 
