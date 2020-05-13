@@ -1,3 +1,7 @@
+use crate::issueapi::{Issue, IssueAPI};
+
+use std::{env, fmt};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -114,4 +118,126 @@ pub struct CreatedIssue {
     pub body: ::serde_json::Value,
     #[serde(rename = "closed_by")]
     pub closed_by: ::serde_json::Value,
+}
+
+pub struct GitHubAPI {
+    owner: String,
+    repo: String,
+}
+
+impl GitHubAPI {
+    // Another static method, taking two arguments:
+    pub fn new(owner: String, repo: String) -> GitHubAPI {
+        GitHubAPI { owner, repo }
+    }
+}
+
+impl fmt::Display for GitHubAPI {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "GitHub Project {}/{}", self.owner, self.repo)
+    }
+}
+
+fn get_token_from_env() -> Option<String> {
+    if env::var("GITHUB_TOKEN").is_err() {
+        return None;
+    }
+    Some(env::var("GITHUB_TOKEN").unwrap())
+}
+
+impl IssueAPI for GitHubAPI {
+    fn repo(&self) -> String {
+        format!("GitHub {}/{}", self.owner, self.repo)
+    }
+    fn get_issues(&self) -> Option<Vec<Issue>> {
+        // Doc: https://developer.github.com/v3/issues/#get-an-issue
+        // TODO (#3): Implement proper error handling when getting issues from GitHub
+        // TODO (#4): Support fetching additional pages of issues from GitHub
+        let token: String;
+        if let Some(x) = get_token_from_env() {
+            token = x;
+        } else {
+            println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
+            return None;
+        }
+
+        let request_url = format!(
+            "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
+            owner = self.owner,
+            repo = self.repo
+        );
+        let client = reqwest::blocking::Client::new();
+        let resp = client
+            .get(&request_url)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("token {token}", token = token),
+            )
+            .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
+            .send()
+            .unwrap();
+        if resp.status().is_success() {
+            let text = resp.text().unwrap();
+            let deserialized: Vec<GitHubIssue> = serde_json::from_str(&text).unwrap();
+            let mut issues = Vec::new();
+            for github_issue in deserialized {
+                let issue = Issue {
+                    number: github_issue.number,
+                    title: github_issue.title,
+                    state: github_issue.state,
+                };
+                issues.push(issue);
+            }
+            return Some(issues);
+        } else if resp.status().is_server_error() {
+            println!("server error!");
+        } else {
+            println!("Something else happened. Status: {:?}", resp.status());
+        }
+        None
+    }
+
+    fn create_issue(&self, title: &str) -> Option<Issue> {
+        // TODO (#5): Implement proper error handling when creating GitHub issues
+        let token: String;
+        if let Some(x) = get_token_from_env() {
+            token = x;
+        } else {
+            println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
+            return None;
+        }
+
+        let issue_body = json!({
+        "title": title,
+        });
+        let request_url = format!(
+            "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
+            owner = self.owner,
+            repo = self.repo
+        );
+        let resp = reqwest::blocking::Client::new()
+            .post(&request_url)
+            .json(&issue_body)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("token {token}", token = token),
+            )
+            .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
+            .send()
+            .unwrap();
+        if resp.status().is_success() {
+            let github_issue: CreatedIssue = resp.json().unwrap();
+            let issue = Issue {
+                number: github_issue.number,
+                title: github_issue.title,
+                state: github_issue.state,
+            };
+            return Some(issue);
+        } else if resp.status().is_server_error() {
+            println!("server error!");
+        } else {
+            println!("Something else happened. Status: {:?}", resp.status());
+        }
+        None
+    }
 }

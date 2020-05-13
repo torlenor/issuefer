@@ -21,7 +21,9 @@ mod todo;
 use crate::todo::Todo;
 
 mod github;
-use crate::github::{CreatedIssue, GitHubIssue};
+
+pub mod issueapi;
+use issueapi::{Issue, IssueAPI};
 
 fn ask_yes_no(question: &str) -> bool {
     let mut ch = ' ';
@@ -131,8 +133,8 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
     all_todos
 }
 
-fn parse_git_config(url: &str) -> Result<(String, String), String> {
-    let re = Regex::new(r"git@github.com:(\S+)/(\S+)\.git").unwrap();
+fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String> {
+    let re = Regex::new(&format!(r"git@{}:(\S+)/(\S+)\.git", domain)).unwrap();
 
     if let Some(x) = re.captures(url) {
         return Ok((
@@ -144,7 +146,7 @@ fn parse_git_config(url: &str) -> Result<(String, String), String> {
     Err("Could not extract origin URL".to_string())
 }
 
-fn get_current_project_from_git_config() -> Result<(String, String), String> {
+fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), String> {
     // TODO (#2): Use or implement an ini parser which supports comments
     let current_dir = env::current_dir();
     if current_dir.is_ok() {
@@ -160,7 +162,7 @@ fn get_current_project_from_git_config() -> Result<(String, String), String> {
             Ok(conf) => {
                 if let Some(section) = conf.section(Some("remote \"origin\"")) {
                     let url = section.get("url").unwrap();
-                    parse_git_config(url)
+                    parse_git_config(url, host)
                 } else {
                     Err("The git repo does not have an origin remote.".to_string())
                 }
@@ -175,121 +177,60 @@ fn get_current_project_from_git_config() -> Result<(String, String), String> {
     }
 }
 
-fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Option<Vec<GitHubIssue>> {
-    // Doc: https://developer.github.com/v3/issues/#get-an-issue
-    // TODO (#3): Implement proper error handling when getting issues from GitHub
-    // TODO (#4): Support fetching additional pages of issues from GitHub
-    let request_url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
-        owner = owner,
-        repo = repo
-    );
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .get(&request_url)
-        .header(
-            reqwest::header::AUTHORIZATION,
-            format!("token {token}", token = token),
-        )
-        .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
-        .send()
-        .unwrap();
-
-    if resp.status().is_success() {
-        let text = resp.text().unwrap();
-        let deserialized: Vec<GitHubIssue> = serde_json::from_str(&text).unwrap();
-        return Some(deserialized);
-    } else if resp.status().is_server_error() {
-        println!("server error!");
-    } else {
-        println!("Something else happened. Status: {:?}", resp.status());
-    }
-
-    None
+fn get_github_git_config() -> Result<(String, String), String> {
+    get_git_config_origin_owner_repo("github.com")
 }
 
-fn get_token_from_env() -> Option<String> {
-    if env::var("GITHUB_TOKEN").is_err() {
-        return None;
+fn get_gitlab_host_from_env() -> String {
+    if env::var("GITLAB_HOST").is_err() {
+        return "gitlab.com".to_string();
     }
-    Some(env::var("GITHUB_TOKEN").unwrap())
+    env::var("GITLAB_HOST").unwrap()
 }
 
-fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
-    if let Some(x) = get_token_from_env() {
-        match get_current_project_from_git_config() {
-            Ok((owner, repo)) => get_issues_from_github(&x, &owner, &repo),
-            Err(e) => {
-                eprintln!("Could not get GitHub project from git config: {:?}", e);
-                None
-            }
-        }
-    } else {
-        println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
-        None
-    }
+fn get_gitlab_git_config() -> Result<(String, String), String> {
+    get_git_config_origin_owner_repo(&get_gitlab_host_from_env())
 }
 
-// find_github_issue_by_title searches a list of GitHub issues by title and returns true if it finds an issue.
-fn find_github_issue_by_title(github_issues: &[GitHubIssue], title: &str) -> bool {
-    if let Some(_issue) = github_issues.iter().find(|&x| x.title == title) {
+fn get_project_api_from_git_config() -> Result<Box<dyn IssueAPI>, String> {
+    let github_config = get_github_git_config();
+    if github_config.is_ok() {
+        let (owner, repo) = github_config.ok().unwrap();
+        return Ok(Box::new(github::GitHubAPI::new(owner, repo)));
+    }
+    let gitlab_config = get_gitlab_git_config();
+    if gitlab_config.is_ok() {
+        return Err("GitLab support not yet implemented".to_string());
+    }
+    Err("No valid GitHub or GitLab remote origin found".to_string())
+}
+
+// find_issue_by_title searches a list of issues by title and returns true if it finds an issue.
+fn find_issue_by_title(issues: &[Issue], title: &str) -> bool {
+    if let Some(_issue) = issues.iter().find(|&x| x.title == title) {
         return true;
     }
     false
 }
 
-// find_github_issue_by_number searches a list of GitHub issues by issue number and returns a copy if it finds it.
-fn find_github_issue_by_number(github_issues: &[GitHubIssue], number: i64) -> Option<GitHubIssue> {
-    if let Some(issue) = github_issues.iter().find(|&x| x.number == number) {
+// find_issue_by_number searches a list of issues by issue number and returns a copy if it finds it.
+fn find_issue_by_number(issues: &[Issue], number: i64) -> Option<Issue> {
+    if let Some(issue) = issues.iter().find(|&x| x.number == number) {
         return Some(issue.clone());
     }
     None
 }
 
-fn compare_todos_and_issues(todos: &[Todo], github_issues: &[GitHubIssue]) -> Vec<Todo> {
+fn compare_todos_and_issues(todos: &[Todo], issues: &[Issue]) -> Vec<Todo> {
     let mut todos_to_create: Vec<Todo> = Vec::new();
 
     for todo in todos {
-        if todo.issue_number == 0 && !find_github_issue_by_title(github_issues, &todo.title) {
+        if todo.issue_number == 0 && !find_issue_by_title(issues, &todo.title) {
             todos_to_create.push(todo.clone());
         }
     }
 
     todos_to_create
-}
-
-fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Option<CreatedIssue> {
-    // TODO (#5): Implement proper error handling when creating GitHub issues
-    let issue_body = json!({
-    "title": title,
-    });
-
-    let request_url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
-        owner = owner,
-        repo = repo
-    );
-    let resp = reqwest::blocking::Client::new()
-        .post(&request_url)
-        .json(&issue_body)
-        .header(
-            reqwest::header::AUTHORIZATION,
-            format!("token {token}", token = token),
-        )
-        .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
-        .send()
-        .unwrap();
-
-    if resp.status().is_success() {
-        let issue: CreatedIssue = resp.json().unwrap();
-        return Some(issue);
-    } else if resp.status().is_server_error() {
-        println!("server error!");
-    } else {
-        println!("Something else happened. Status: {:?}", resp.status());
-    }
-
-    None
 }
 
 fn commit(file_path: &str, message: &str) {
@@ -349,38 +290,29 @@ fn update_file(todo: &Todo, issue_number: i64, delete: bool) -> Result<(), io::E
     Ok(())
 }
 
-fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
+fn create_github_issues_from_todos(
+    api: Box<dyn IssueAPI>,
+    todos_to_create: &[Todo],
+    force_yes: bool,
+) {
     if todos_to_create.is_empty() {
         return;
     }
     println!("Found the following unreported TODOs:");
-    if let Some(token) = get_token_from_env() {
-        match get_current_project_from_git_config() {
-            Ok((owner, repo)) => {
-                for todo in todos_to_create {
-                    println!("{}", todo);
-                    if force_yes || ask_yes_no("Do you want to report this TODO?") {
-                        if let Some(new_issue) =
-                            create_github_issue(&owner, &repo, &token, &todo.title)
-                        {
-                            update_file(&todo, new_issue.number, false).unwrap();
-                            commit_add(&todo.file_path, new_issue.number);
-                            println!(
-                                "Issue #{} with title '{}' created successfully",
-                                new_issue.number, new_issue.title
-                            );
-                        } else {
-                            println!("Could not create new GitHub issue for '{}'", todo);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Could not get GitHub project from git config: {:?}", e);
+    for todo in todos_to_create {
+        println!("{}", todo);
+        if force_yes || ask_yes_no("Do you want to report this TODO?") {
+            if let Some(new_issue) = api.create_issue(&todo.title) {
+                update_file(&todo, new_issue.number, false).unwrap();
+                commit_add(&todo.file_path, new_issue.number);
+                println!(
+                    "Issue #{} with title '{}' created successfully",
+                    new_issue.number, new_issue.title
+                );
+            } else {
+                println!("Could not create new issue for '{}'", todo);
             }
         }
-    } else {
-        println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
     }
 }
 
@@ -402,14 +334,12 @@ fn remove_todos(todos_to_remove: &[Todo], force_yes: bool) {
     }
 }
 
-fn find_todos_to_cleanup(todos: &[Todo], github_issues: &[GitHubIssue]) -> Vec<Todo> {
+fn find_todos_to_cleanup(todos: &[Todo], issues: &[Issue]) -> Vec<Todo> {
     let mut todos_to_cleanup: Vec<Todo> = Vec::new();
 
     for todo in todos {
         if todo.issue_number > 0 {
-            if let Some(issue) =
-                find_github_issue_by_number(github_issues, todo.issue_number as i64)
-            {
+            if let Some(issue) = find_issue_by_number(issues, todo.issue_number as i64) {
                 if issue.state == "closed" {
                     todos_to_cleanup.push(todo.clone());
                 }
@@ -449,21 +379,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cleanup = matches.is_present("cleanup");
     let force_yes = matches.is_present("force-yes");
 
-    match get_current_project_from_git_config() {
-        Ok((owner, repo)) => println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo),
+    let api: Box<dyn IssueAPI>;
+    match get_project_api_from_git_config() {
+        Ok(new_api) => {
+            api = new_api;
+        }
         Err(e) => {
             eprintln!("Could not get GitHub project from git config: {}", e);
             std::process::exit(1);
         }
     }
 
+    println!("IssueFER running for {}\n", api.repo());
+
     let source_files = get_all_source_code_files()?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
 
-    let github_issues = fetch_current_github_issues();
+    let github_issues = api.get_issues();
     if let Some(issues) = github_issues {
         if report {
             create_github_issues_from_todos(
+                api,
                 &compare_todos_and_issues(&source_code_todos, &issues),
                 force_yes,
             );
@@ -486,7 +422,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("To clean them up run issuefer with the -c/--cleanup flag");
         }
     } else {
-        eprintln!("Could not fetch GitHub issues for current project");
+        eprintln!("Could not fetch issues for current project");
         std::process::exit(1);
     }
 
