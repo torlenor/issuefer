@@ -145,7 +145,7 @@ fn parse_git_config(url: &str) -> Result<(String, String), String> {
 }
 
 fn get_current_project_from_git_config() -> Result<(String, String), String> {
-    // TODO: Use or implement an ini parser which supports comments
+    // TODO (#2): Use or implement an ini parser which supports comments
     let current_dir = env::current_dir();
     if current_dir.is_ok() {
         let path = format!("{}/.git/config", current_dir.unwrap().to_str().unwrap());
