@@ -105,7 +105,7 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
 }
 
 fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
-    // TODO: Handle errors when parsing source files for TODOs
+    // TODO: Implement proper error handling when parsing source files
     let f = File::open(source_file).expect("Unable to open file");
     let f = BufReader::new(f);
 
@@ -131,43 +131,54 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
     all_todos
 }
 
-fn parse_git_config(url: &str) -> Option<(String, String)> {
+fn parse_git_config(url: &str) -> Result<(String, String), String> {
     let re = Regex::new(r"git@github.com:(\S+)/(\S+)\.git").unwrap();
 
     if let Some(x) = re.captures(url) {
-        return Some((
+        return Ok((
             x.get(1).map_or("", |m| m.as_str()).to_string(),
             x.get(2).map_or("", |m| m.as_str()).to_string(),
         ));
     }
 
-    None
+    Err("Could not extract origin URL".to_string())
 }
 
-fn get_current_project_from_git_config() -> Option<(String, String)> {
-    // TODO: Implement proper error handling when reading git config
-    // TODO: The used ini parser dies if it encounters a line starting with #, i.e., a comment
+fn get_current_project_from_git_config() -> Result<(String, String), String> {
+    // TODO: Use or implement an ini parser which supports comments
     let current_dir = env::current_dir();
     if current_dir.is_ok() {
         let path = format!("{}/.git/config", current_dir.unwrap().to_str().unwrap());
         if !std::path::Path::new(&path).exists() {
-            return None;
+            return Err(format!(
+                "Could ot open git config {}: Path does not exist",
+                path
+            ));
         }
 
-        let conf = Ini::load_from_file(path).unwrap();
-
-        let section = conf.section(Some("remote \"origin\"")).unwrap();
-        let url = section.get("url").unwrap();
-        parse_git_config(url)
+        match Ini::load_from_file(path) {
+            Ok(conf) => {
+                if let Some(section) = conf.section(Some("remote \"origin\"")) {
+                    let url = section.get("url").unwrap();
+                    parse_git_config(url)
+                } else {
+                    Err("The git repo does not have an origin remote.".to_string())
+                }
+            }
+            Err(e) => Err(e.to_string()),
+        }
     } else {
-        None
+        Err(format!(
+            "Cannot determine current directory: {}",
+            current_dir.err().unwrap()
+        ))
     }
 }
 
 fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Option<Vec<GitHubIssue>> {
     // Doc: https://developer.github.com/v3/issues/#get-an-issue
-    // TODO: Implement correct error handling when getting issues from GitHub
-    // TODO: Implement support for pages in response when retrieving GitHub issues
+    // TODO: Implement proper error handling when getting issues from GitHub
+    // TODO: Support fetching additional pages of issues from GitHub
     let request_url = format!(
         "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
         owner = owner,
@@ -206,11 +217,12 @@ fn get_token_from_env() -> Option<String> {
 
 fn fetch_current_github_issues() -> Option<Vec<GitHubIssue>> {
     if let Some(x) = get_token_from_env() {
-        if let Some((owner, repo)) = get_current_project_from_git_config() {
-            get_issues_from_github(&x, &owner, &repo)
-        } else {
-            println!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
-            None
+        match get_current_project_from_git_config() {
+            Ok((owner, repo)) => get_issues_from_github(&x, &owner, &repo),
+            Err(e) => {
+                eprintln!("Could not get GitHub project from git config: {:?}", e);
+                None
+            }
         }
     } else {
         println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
@@ -247,7 +259,7 @@ fn compare_todos_and_issues(todos: &[Todo], github_issues: &[GitHubIssue]) -> Ve
 }
 
 fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Option<CreatedIssue> {
-    // TODO: The function that creates GitHub issues needs proper error handling
+    // TODO: Implement proper error handling when creating GitHub issues
     let issue_body = json!({
     "title": title,
     });
@@ -338,25 +350,29 @@ fn create_github_issues_from_todos(todos_to_create: &[Todo], force_yes: bool) {
     }
     println!("Found the following unreported TODOs:");
     if let Some(token) = get_token_from_env() {
-        if let Some((owner, repo)) = get_current_project_from_git_config() {
-            for todo in todos_to_create {
-                println!("{}", todo);
-                if force_yes || ask_yes_no("Do you want to report this TODO?") {
-                    if let Some(new_issue) = create_github_issue(&owner, &repo, &token, &todo.title)
-                    {
-                        update_file(&todo, new_issue.number, false).unwrap();
-                        commit_add(&todo.file_path, new_issue.number);
-                        println!(
-                            "Issue #{} with title '{}' created successfully",
-                            new_issue.number, new_issue.title
-                        );
-                    } else {
-                        println!("Could not create new GitHub issue for '{}'", todo);
+        match get_current_project_from_git_config() {
+            Ok((owner, repo)) => {
+                for todo in todos_to_create {
+                    println!("{}", todo);
+                    if force_yes || ask_yes_no("Do you want to report this TODO?") {
+                        if let Some(new_issue) =
+                            create_github_issue(&owner, &repo, &token, &todo.title)
+                        {
+                            update_file(&todo, new_issue.number, false).unwrap();
+                            commit_add(&todo.file_path, new_issue.number);
+                            println!(
+                                "Issue #{} with title '{}' created successfully",
+                                new_issue.number, new_issue.title
+                            );
+                        } else {
+                            println!("Could not create new GitHub issue for '{}'", todo);
+                        }
                     }
                 }
             }
-        } else {
-            println!("No valid GitHub project repository found in current directory.");
+            Err(e) => {
+                eprintln!("Could not get GitHub project from git config: {:?}", e);
+            }
         }
     } else {
         println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
@@ -428,11 +444,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cleanup = matches.is_present("cleanup");
     let force_yes = matches.is_present("force-yes");
 
-    if let Some((owner, repo)) = get_current_project_from_git_config() {
-        println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo);
-    } else {
-        eprintln!("Could not get GitHub project from git config. Make sure we are in a git repository and has GitHub as origin.");
-        std::process::exit(1);
+    match get_current_project_from_git_config() {
+        Ok((owner, repo)) => println!("IssueFER running for GitHub project '{}/{}'\n", owner, repo),
+        Err(e) => {
+            eprintln!("Could not get GitHub project from git config: {}", e);
+            std::process::exit(1);
+        }
     }
 
     let source_files = get_all_source_code_files()?;
@@ -468,9 +485,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    // TODO: Support ignoring TODOs, maybe mark them with // TODO (II): in the file
-    // TODO: Support C style comments with /* */
-    // TODO: Support TODO comments with following text that shall then be added to the body of the issue
+    // TODO: Add option to ignore TODOs, mark them with '// TODO (II):'
+    // TODO: Support more than just // at the beginning of the TODO lines
+    // TODO: C style multi-line comments with /* */ should be supported
+    // TODO: When encountering TODOs followed by commented lines  those lines shall be added to the body of the issue
+    // TODO: Make it possible to ignore files by their extension, .e.g., .md
 
     Ok(())
 }
