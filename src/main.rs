@@ -330,9 +330,14 @@ fn update_file(todo: &Todo, issue_number: i64, delete: bool) -> Result<(), io::E
         let output_file = File::create(&output_file_path)?;
         let mut writer = BufWriter::new(output_file);
         for (cnt, line) in reader.lines().enumerate() {
-            if cnt == todo.line_number && !delete {
-                let new_line = line?.replace("// TODO:", &format!("// TODO (#{}):", issue_number));
-                writeln!(writer, "{}", new_line)?;
+            if cnt == todo.line_number {
+                if delete {
+                    continue;
+                } else {
+                    let new_line =
+                        line?.replace("// TODO:", &format!("// TODO (#{}):", issue_number));
+                    writeln!(writer, "{}", new_line)?;
+                }
             } else {
                 writeln!(writer, "{}", line?)?;
             }
