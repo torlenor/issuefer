@@ -177,7 +177,7 @@ fn get_current_project_from_git_config() -> Result<(String, String), String> {
 
 fn get_issues_from_github(token: &str, owner: &str, repo: &str) -> Option<Vec<GitHubIssue>> {
     // Doc: https://developer.github.com/v3/issues/#get-an-issue
-    // TODO: Implement proper error handling when getting issues from GitHub
+    // TODO (#3): Implement proper error handling when getting issues from GitHub
     // TODO: Support fetching additional pages of issues from GitHub
     let request_url = format!(
         "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
