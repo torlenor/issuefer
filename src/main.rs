@@ -259,7 +259,7 @@ fn compare_todos_and_issues(todos: &[Todo], github_issues: &[GitHubIssue]) -> Ve
 }
 
 fn create_github_issue(owner: &str, repo: &str, token: &str, title: &str) -> Option<CreatedIssue> {
-    // TODO: Implement proper error handling when creating GitHub issues
+    // TODO (#5): Implement proper error handling when creating GitHub issues
     let issue_body = json!({
     "title": title,
     });
