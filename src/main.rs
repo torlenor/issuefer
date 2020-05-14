@@ -4,9 +4,6 @@ extern crate clap;
 extern crate ini;
 extern crate regex;
 extern crate reqwest;
-extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
 
 use std::error::Error;
 use std::fs::File;
@@ -21,6 +18,7 @@ mod todo;
 use crate::todo::Todo;
 
 mod github;
+mod gitlab;
 
 pub mod issueapi;
 use issueapi::{Issue, IssueAPI};
@@ -134,7 +132,13 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
 }
 
 fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String> {
-    let re = Regex::new(&format!(r"git@{}:(\S+)/(\S+)\.git", domain)).unwrap();
+    // TODO: The git config parsing fails to extract the correct repo/owner for GitLab when it includes an ssh port
+    let re: Regex;
+    if url.starts_with("ssh://") {
+        re = Regex::new(&format!(r"ssh://git@{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
+    } else {
+        re = Regex::new(&format!(r"git@{}:(\S+)/(\S+)\.git", domain)).unwrap();
+    }
 
     if let Some(x) = re.captures(url) {
         return Ok((
@@ -200,9 +204,12 @@ fn get_project_api_from_git_config() -> Result<Box<dyn IssueAPI>, String> {
     }
     let gitlab_config = get_gitlab_git_config();
     if gitlab_config.is_ok() {
-        return Err("GitLab support not yet implemented".to_string());
+        let (owner, repo) = gitlab_config.ok().unwrap();
+        return Ok(Box::new(gitlab::GitLabAPI::new(owner, repo)));
+    } else {
+        println!("{:?}", gitlab_config.err());
     }
-    Err("No valid GitHub or GitLab remote origin found".to_string())
+    Err("No valid GitHub or GitLab remote origin found. In case a private GitLab repository make sure GITLAB_HOST env variable is set correctly.".to_string())
 }
 
 // find_issue_by_title searches a list of issues by title and returns true if it finds an issue.

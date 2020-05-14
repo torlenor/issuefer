@@ -34,7 +34,7 @@ echo 'export GITHUB_TOKEN="YOUR_TOKEN"' >> ~/.profile
 ```
 You have to login again to apply that change.
 
-# GitLab token
+## GitLab token
 
 Issuefer needs a GitLab token when working with a GitLab repo. Create it on your GitLab page and set it with
 

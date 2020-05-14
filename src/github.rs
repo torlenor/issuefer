@@ -2,6 +2,7 @@ use crate::issueapi::{Issue, IssueAPI};
 
 use std::{env, fmt};
 
+extern crate serde_derive;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -207,9 +208,7 @@ impl IssueAPI for GitHubAPI {
             return None;
         }
 
-        let issue_body = json!({
-        "title": title,
-        });
+        let issue_body = format!("\"title\"=\"{}\"", title);
         let request_url = format!(
             "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
             owner = self.owner,
