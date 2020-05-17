@@ -134,6 +134,8 @@ fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String>
     let re: Regex;
     if url.starts_with("ssh://") {
         re = Regex::new(&format!(r"ssh://git@{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
+    } else if url.starts_with("https://") {
+        re = Regex::new(&format!(r"https://{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
     } else {
         re = Regex::new(&format!(r"git@{}:(\S+)/(\S+)\.git", domain)).unwrap();
     }
