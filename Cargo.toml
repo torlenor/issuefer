@@ -11,7 +11,6 @@ clap = "2.33.0"
 lazy_static = "1.4.0"
 regex = "1"
 reqwest = { version = "0.10", features = ["json", "blocking"] }
-rust-ini = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0.107"
 serde_json = "1.0"

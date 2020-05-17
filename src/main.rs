@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate clap;
-extern crate ini;
 extern crate regex;
 extern crate reqwest;
 
@@ -11,7 +10,6 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::{env, io};
 
 use clap::{App, Arg};
-use ini::Ini;
 use regex::Regex;
 
 mod todo;
@@ -19,6 +17,7 @@ use crate::todo::Todo;
 
 mod github;
 mod gitlab;
+mod iniparser;
 
 pub mod issueapi;
 use issueapi::{Issue, IssueAPI};
@@ -161,16 +160,19 @@ fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), Stri
             ));
         }
 
-        match Ini::load_from_file(path) {
-            Ok(conf) => {
-                if let Some(section) = conf.section(Some("remote \"origin\"")) {
-                    let url = section.get("url").unwrap();
-                    parse_git_config(url, host)
+        match iniparser::parse_ini_file(&path) {
+            Ok(ini) => {
+                if let Ok(section) = ini.section("remote \"origin\"") {
+                    if let Ok(url) = section.get("url") {
+                        parse_git_config(url, host)
+                    } else {
+                        Err("The git repo origin remote url does not exist.".to_string())
+                    }
                 } else {
                     Err("The git repo does not have an origin remote.".to_string())
                 }
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(e),
         }
     } else {
         Err(format!(
