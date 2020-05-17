@@ -1,6 +1,6 @@
 # issuefer
 
-This program finds all TODOs in the source code and reports them as issues to GitHub.
+This program finds all TODOs in the source code and reports them as issues to GitHub or GitLab.
 
 ## What it does
 
@@ -8,7 +8,7 @@ This program finds all TODOs in the source code and reports them as issues to Gi
 ```
 // TODO: Some test
 ```
-2. Run `issuefer -r` which will present you with the opportunity to automatically create a GitHub issue out of the found TODOs.
+2. Run `issuefer -r` which will present you with the opportunity to automatically create a issue out of the found TODOs.
 3. Issuefer will add the assigned issue number to the TODO and will automatically create a commit (it will not automatically push, you have to do that yourself).
 
 ## How to build it
@@ -33,6 +33,26 @@ or the easier way (maybe not the safest) is to add it to your ~/.profile:
 echo 'export GITHUB_TOKEN="YOUR_TOKEN"' >> ~/.profile
 ```
 You have to login again to apply that change.
+
+## GitLab token
+
+Issuefer needs a GitLab token when working with a GitLab repo. Create it on your GitLab page and set it with
+
+```bash
+export GITHUB_TOKEN=YOUR_TOKEN /path/to/issuefer
+```
+
+or with
+```bash
+echo 'export GITLAB_TOKEN="YOUR_TOKEN"' >> ~/.profile
+```
+to make it permanent, as it is done for GitHub.
+
+In addition, if you are working with a custom GitLab installation you can specify the host name via
+
+```bash
+export GITLAB_HOST="your.gitlab.inst"
+```
 
 ## Run it
 
