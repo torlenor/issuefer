@@ -149,7 +149,6 @@ fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String>
 }
 
 fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), String> {
-    // TODO (#2): Use or implement an ini parser which supports comments
     let current_dir = env::current_dir();
     if current_dir.is_ok() {
         let path = format!("{}/.git/config", current_dir.unwrap().to_str().unwrap());
