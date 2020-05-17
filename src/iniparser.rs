@@ -50,7 +50,7 @@ impl Ini {
 }
 
 pub fn parse_ini_file(file_name: &str) -> Result<Ini, String> {
-    // TODO: Make ini parsing prettier
+    // TODO (#15): Make ini parsing prettier
     let f = File::open(file_name).expect("Unable to open file");
     let f = BufReader::new(f);
 
