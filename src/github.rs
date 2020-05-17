@@ -193,7 +193,11 @@ impl IssueAPI for GitHubAPI {
         } else if resp.status().is_server_error() {
             println!("server error!");
         } else {
-            println!("Something else happened. Status: {:?}", resp.status());
+            println!(
+                "Something else happened. Status: {:?}, Body: {:?}",
+                resp.status(),
+                resp.text()
+            );
         }
         None
     }
@@ -208,7 +212,8 @@ impl IssueAPI for GitHubAPI {
             return None;
         }
 
-        let issue_body = format!("\"title\"=\"{}\"", title);
+        let mut issue_body = std::collections::HashMap::new();
+        issue_body.insert("title", title);
         let request_url = format!(
             "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
             owner = self.owner,
@@ -235,7 +240,11 @@ impl IssueAPI for GitHubAPI {
         } else if resp.status().is_server_error() {
             println!("server error!");
         } else {
-            println!("Something else happened. Status: {:?}", resp.status());
+            println!(
+                "Something else happened. Status: {:?}, Body: {:?}",
+                resp.status(),
+                resp.text()
+            );
         }
         None
     }
