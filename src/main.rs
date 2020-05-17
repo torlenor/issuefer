@@ -188,6 +188,7 @@ fn get_github_git_config() -> Result<(String, String), String> {
 }
 
 fn get_gitlab_host_from_env() -> String {
+    // TODO (#16): It should be possible to store hosts and tokens in a config file
     if env::var("GITLAB_HOST").is_err() {
         return "gitlab.com".to_string();
     }
