@@ -132,7 +132,6 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
 }
 
 fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String> {
-    // TODO: The git config parsing fails to extract the correct repo/owner for GitLab when it includes an ssh port
     let re: Regex;
     if url.starts_with("ssh://") {
         re = Regex::new(&format!(r"ssh://git@{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
