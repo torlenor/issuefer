@@ -1,8 +1,10 @@
 # issuefer
 
-This program finds all TODOs in the source code and reports them as issues to GitHub or GitLab.
+![CI](https://github.com/torlenor/issuefer/workflows/CI/badge.svg)
 
 ## What it does
+
+This program finds all TODOs in the source code and reports them as issues to GitHub or GitLab.
 
 1. Write a TODO somewhere in your source code in the form
 ```
