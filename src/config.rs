@@ -2,7 +2,7 @@ use crate::iniparser;
 
 use std::env;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GitHubConfig {
     pub token: String,
 }
@@ -29,7 +29,7 @@ impl GitHubConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GitLabConfig {
     pub host: String,
     pub token: String,
@@ -73,7 +73,21 @@ impl GitLabConfig {
 }
 
 #[derive(Debug)]
+pub struct GeneralConfig {
+    pub ignored_extensions: Vec<String>,
+}
+
+impl GeneralConfig {
+    fn new() -> GeneralConfig {
+        GeneralConfig {
+            ignored_extensions: Vec::<String>::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Config {
+    pub general: GeneralConfig,
     pub github: Option<GitHubConfig>,
     pub gitlab: Vec<GitLabConfig>,
 }
@@ -83,20 +97,34 @@ impl Config {
         match iniparser::parse_ini_file(&file_name.to_str().unwrap()) {
             Ok(ini) => {
                 let mut config = Config {
+                    general: GeneralConfig::new(),
                     github: None,
                     gitlab: Vec::<GitLabConfig>::new(),
                 };
                 for section in ini.sections() {
-                    let host = section.name();
-                    if !host.is_empty() {
+                    let section_name = section.name();
+                    if !section_name.is_empty() {
+                        if section_name == "general" {
+                            if let Ok(ignored_extensions) = section.get("ignored_extensions") {
+                                let ignored_extensions: Vec<String> = ignored_extensions
+                                    .split(';')
+                                    .map(|x| x.to_string())
+                                    .collect();
+                                config.general = GeneralConfig { ignored_extensions };
+                            }
+                            continue;
+                        }
                         if let Ok(token) = section.get("token") {
-                            if host == "github.com" {
+                            if section_name == "github.com" {
                                 config.github = Some(GitHubConfig::new(token));
                             } else {
-                                config.gitlab.push(GitLabConfig::new(host, token));
+                                config.gitlab.push(GitLabConfig::new(section_name, token));
                             }
                         } else {
-                            println!("Warning: No token found in section {}. Skipping", host);
+                            println!(
+                                "Warning: No token found in section {}. Skipping",
+                                section_name
+                            );
                         }
                     } else {
                         println!("Warning: Encountered empty section name in config. Skipping");
@@ -109,6 +137,7 @@ impl Config {
     }
     pub fn from_env() -> Result<Config, String> {
         let config = Config {
+            general: GeneralConfig::new(),
             github: GitHubConfig::from_env(),
             gitlab: GitLabConfig::from_env(),
         };

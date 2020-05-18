@@ -57,6 +57,13 @@ token = other_gitlab_token
 token = yet_another_gitlab_token
 ```
 
+In addition you can tell issuefer to ignore file by extension in the following way:
+
+```ini
+[general]
+ignored_extensions = md;png;exe
+```
+
 ### From environment
 
 If no config file can be found, issuefer tries to find its config from environment variables.
