@@ -1,6 +1,7 @@
+use crate::config;
 use crate::issueapi::{Issue, IssueAPI};
 
-use std::{env, fmt};
+use std::fmt;
 
 extern crate serde_derive;
 use serde::{Deserialize, Serialize};
@@ -158,14 +159,19 @@ pub struct CreatedIssue {
 }
 
 pub struct GitLabAPI {
+    config: config::GitLabConfig,
     owner: String,
     repo: String,
 }
 
 impl GitLabAPI {
     // Another static method, taking two arguments:
-    pub fn new(owner: String, repo: String) -> GitLabAPI {
-        GitLabAPI { owner, repo }
+    pub fn new(config: config::GitLabConfig, owner: String, repo: String) -> GitLabAPI {
+        GitLabAPI {
+            config,
+            owner,
+            repo,
+        }
     }
 }
 
@@ -173,20 +179,6 @@ impl fmt::Display for GitLabAPI {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GitLab Project {}/{}", self.owner, self.repo)
     }
-}
-
-fn get_token_from_env() -> Option<String> {
-    if env::var("GITLAB_TOKEN").is_err() {
-        return None;
-    }
-    Some(env::var("GITLAB_TOKEN").unwrap())
-}
-
-fn get_gitlab_host_from_env() -> String {
-    if env::var("GITLAB_HOST").is_err() {
-        return "gitlab.com".to_string();
-    }
-    env::var("GITLAB_HOST").unwrap()
 }
 
 impl IssueAPI for GitLabAPI {
@@ -197,24 +189,17 @@ impl IssueAPI for GitLabAPI {
         // Doc: https://developer.gitlab.com/v3/issues/#get-an-issue
         // TODO (#3): Implement proper error handling when getting issues from GitLab
         // TODO (#4): Support fetching additional pages of issues from GitLab
-        let token: String;
-        if let Some(x) = get_token_from_env() {
-            token = x;
-        } else {
-            println!("No GitLab token specified. Use env variable GITLAB_TOKEN to provide one.");
-            return None;
-        }
 
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
-            host = get_gitlab_host_from_env(),
+            host = self.config.host,
             owner = self.owner,
             repo = self.repo
         );
         let client = reqwest::blocking::Client::new();
         let resp = client
             .get(&request_url)
-            .header("PRIVATE-TOKEN", token)
+            .header("PRIVATE-TOKEN", &self.config.token)
             .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
             .send()
             .unwrap();
@@ -234,31 +219,26 @@ impl IssueAPI for GitLabAPI {
         } else if resp.status().is_server_error() {
             println!("server error!");
         } else {
-            println!("Something else happened. Status: {:?}", resp.status());
+            println!(
+                "Something else happened. Status: {:?}, Body: {:?}",
+                resp.status(),
+                resp.text()
+            );
         }
         None
     }
 
     fn create_issue(&self, title: &str) -> Option<Issue> {
         // TODO (#5): Implement proper error handling when creating GitLab issues
-        let token: String;
-        if let Some(x) = get_token_from_env() {
-            token = x;
-        } else {
-            println!("No GitLab token specified. Use env variable GITHUB_TOKEN to provide one.");
-            return None;
-        }
-
-        // let issue_body = format!("\"title\"=\"{}\"", title);
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
-            host = get_gitlab_host_from_env(),
+            host = self.config.host,
             owner = self.owner,
             repo = self.repo
         );
         let resp = reqwest::blocking::Client::new()
             .post(&request_url)
-            .header("PRIVATE-TOKEN", token)
+            .header("PRIVATE-TOKEN", &self.config.token)
             .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
             .query(&[("title", title)])
             .send()

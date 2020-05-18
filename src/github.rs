@@ -1,6 +1,7 @@
+use crate::config;
 use crate::issueapi::{Issue, IssueAPI};
 
-use std::{env, fmt};
+use std::fmt;
 
 extern crate serde_derive;
 use serde::{Deserialize, Serialize};
@@ -122,14 +123,19 @@ pub struct CreatedIssue {
 }
 
 pub struct GitHubAPI {
+    config: config::GitHubConfig,
     owner: String,
     repo: String,
 }
 
 impl GitHubAPI {
     // Another static method, taking two arguments:
-    pub fn new(owner: String, repo: String) -> GitHubAPI {
-        GitHubAPI { owner, repo }
+    pub fn new(config: config::GitHubConfig, owner: String, repo: String) -> GitHubAPI {
+        GitHubAPI {
+            config,
+            owner,
+            repo,
+        }
     }
 }
 
@@ -137,13 +143,6 @@ impl fmt::Display for GitHubAPI {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GitHub Project {}/{}", self.owner, self.repo)
     }
-}
-
-fn get_token_from_env() -> Option<String> {
-    if env::var("GITHUB_TOKEN").is_err() {
-        return None;
-    }
-    Some(env::var("GITHUB_TOKEN").unwrap())
 }
 
 impl IssueAPI for GitHubAPI {
@@ -154,14 +153,6 @@ impl IssueAPI for GitHubAPI {
         // Doc: https://developer.github.com/v3/issues/#get-an-issue
         // TODO (#3): Implement proper error handling when getting issues from GitHub
         // TODO (#4): Support fetching additional pages of issues from GitHub
-        let token: String;
-        if let Some(x) = get_token_from_env() {
-            token = x;
-        } else {
-            println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
-            return None;
-        }
-
         let request_url = format!(
             "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
             owner = self.owner,
@@ -172,7 +163,7 @@ impl IssueAPI for GitHubAPI {
             .get(&request_url)
             .header(
                 reqwest::header::AUTHORIZATION,
-                format!("token {token}", token = token),
+                format!("token {token}", token = self.config.token),
             )
             .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
             .send()
@@ -204,14 +195,6 @@ impl IssueAPI for GitHubAPI {
 
     fn create_issue(&self, title: &str) -> Option<Issue> {
         // TODO (#5): Implement proper error handling when creating GitHub issues
-        let token: String;
-        if let Some(x) = get_token_from_env() {
-            token = x;
-        } else {
-            println!("No GitHub token specified. Use env variable GITHUB_TOKEN to provide one.");
-            return None;
-        }
-
         let mut issue_body = std::collections::HashMap::new();
         issue_body.insert("title", title);
         let request_url = format!(
@@ -224,7 +207,7 @@ impl IssueAPI for GitHubAPI {
             .json(&issue_body)
             .header(
                 reqwest::header::AUTHORIZATION,
-                format!("token {token}", token = token),
+                format!("token {token}", token = self.config.token),
             )
             .header(reqwest::header::USER_AGENT, "hyper/0.5.2")
             .send()

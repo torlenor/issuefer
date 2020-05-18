@@ -39,19 +39,29 @@ You have to login again to apply that change.
 Issuefer needs a GitLab token when working with a GitLab repo. Create it on your GitLab page and set it with
 
 ```bash
-export GITHUB_TOKEN=YOUR_TOKEN /path/to/issuefer
+export GITLAB_TOKEN=YOUR_HOST:YOUR_TOKEN;ANOTHER_HOST:ANOTHER_TOKEN;GITLAB_COM_TOKEN /path/to/issuefer
 ```
 
 or with
 ```bash
-echo 'export GITLAB_TOKEN="YOUR_TOKEN"' >> ~/.profile
+echo 'export GITLAB_TOKEN="YOUR_HOST:YOUR_TOKEN;ANOTHER_HOST:ANOTHER_TOKEN;GITLAB_COM_TOKEN"' >> ~/.profile
 ```
-to make it permanent, as it is done for GitHub.
+to make it permanent, as it is done for GitHub. The syntax is `host:token` and they are separated by `;`. If no host part is specified, it is assumed to be a gitlab.com token.
 
-In addition, if you are working with a custom GitLab installation you can specify the host name via
+## How to set environment variables on Windows with PowerShell
 
-```bash
-export GITLAB_HOST="your.gitlab.inst"
+If you want to use issuefer on Windows and you want to use environment variables here is an example for `GITLAB_TOKEN` in PowerShell.
+
+To set the environment variable use
+
+```powershell
+$env:GITLAB_TOKEN = 'YOUR_HOST:YOUR_TOKEN;ANOTHER_HOST:ANOTHER_TOKEN;GITLAB_COM_TOKEN'
+```
+
+or to persist it to your user profile use
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('GITLAB_TOKEN', 'YOUR_HOST:YOUR_TOKEN;ANOTHER_HOST:ANOTHER_TOKEN;GITLAB_COM_TOKEN', [System.EnvironmentVariableTarget]::User)
 ```
 
 ## Run it

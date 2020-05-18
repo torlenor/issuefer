@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate clap;
+extern crate dirs;
 extern crate regex;
 extern crate reqwest;
 
@@ -15,6 +16,7 @@ use regex::Regex;
 mod todo;
 use crate::todo::Todo;
 
+mod config;
 mod github;
 mod gitlab;
 mod iniparser;
@@ -130,27 +132,28 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
     all_todos
 }
 
-fn parse_git_config(url: &str, domain: &str) -> Result<(String, String), String> {
+fn parse_git_config(url: &str) -> Result<(String, String, String), String> {
     let re: Regex;
     if url.starts_with("ssh://") {
-        re = Regex::new(&format!(r"ssh://git@{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
+        re = Regex::new(&"ssh://git@(\\S+):?\\d*/(\\S+)/(\\S+)\\.git".to_string()).unwrap();
     } else if url.starts_with("https://") {
-        re = Regex::new(&format!(r"https://{}:?\d*/(\S+)/(\S+)\.git", domain)).unwrap();
+        re = Regex::new(&"https://(\\S+):?\\d*/(\\S+)/(\\S+)\\.git".to_string()).unwrap();
     } else {
-        re = Regex::new(&format!(r"git@{}:(\S+)/(\S+)\.git", domain)).unwrap();
+        re = Regex::new(&"git@(\\S+):(\\S+)/(\\S+)\\.git".to_string()).unwrap();
     }
 
     if let Some(x) = re.captures(url) {
         return Ok((
             x.get(1).map_or("", |m| m.as_str()).to_string(),
             x.get(2).map_or("", |m| m.as_str()).to_string(),
+            x.get(3).map_or("", |m| m.as_str()).to_string(),
         ));
     }
 
     Err("Could not extract origin URL".to_string())
 }
 
-fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), String> {
+fn get_git_config_host_owner_repo() -> Result<(String, String, String), String> {
     let current_dir = env::current_dir();
     if current_dir.is_ok() {
         let path = format!("{}/.git/config", current_dir.unwrap().to_str().unwrap());
@@ -165,7 +168,7 @@ fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), Stri
             Ok(ini) => {
                 if let Ok(section) = ini.section("remote \"origin\"") {
                     if let Ok(url) = section.get("url") {
-                        parse_git_config(url, host)
+                        parse_git_config(url)
                     } else {
                         Err("The git repo origin remote url does not exist.".to_string())
                     }
@@ -183,36 +186,30 @@ fn get_git_config_origin_owner_repo(host: &str) -> Result<(String, String), Stri
     }
 }
 
-fn get_github_git_config() -> Result<(String, String), String> {
-    get_git_config_origin_owner_repo("github.com")
-}
-
-fn get_gitlab_host_from_env() -> String {
-    // TODO (#16): It should be possible to store hosts and tokens in a config file
-    if env::var("GITLAB_HOST").is_err() {
-        return "gitlab.com".to_string();
+fn get_project_api(config: config::Config) -> Result<Box<dyn IssueAPI>, String> {
+    if let Ok((host, owner, repo)) = get_git_config_host_owner_repo() {
+        if host == "github.com" && config.github.is_some() {
+            return Ok(Box::new(github::GitHubAPI::new(
+                config.github.unwrap(),
+                owner,
+                repo,
+            )));
+        } else if host == "gitlab.com" {
+            for c in config.gitlab {
+                if c.host == "" {
+                    return Ok(Box::new(gitlab::GitLabAPI::new(c, owner, repo)));
+                }
+            }
+        } else {
+            for c in config.gitlab {
+                if c.host == host {
+                    return Ok(Box::new(gitlab::GitLabAPI::new(c, owner, repo)));
+                }
+            }
+        }
     }
-    env::var("GITLAB_HOST").unwrap()
-}
 
-fn get_gitlab_git_config() -> Result<(String, String), String> {
-    get_git_config_origin_owner_repo(&get_gitlab_host_from_env())
-}
-
-fn get_project_api_from_git_config() -> Result<Box<dyn IssueAPI>, String> {
-    let github_config = get_github_git_config();
-    if github_config.is_ok() {
-        let (owner, repo) = github_config.ok().unwrap();
-        return Ok(Box::new(github::GitHubAPI::new(owner, repo)));
-    }
-    let gitlab_config = get_gitlab_git_config();
-    if gitlab_config.is_ok() {
-        let (owner, repo) = gitlab_config.ok().unwrap();
-        return Ok(Box::new(gitlab::GitLabAPI::new(owner, repo)));
-    } else {
-        println!("{:?}", gitlab_config.err());
-    }
-    Err("No valid GitHub or GitLab remote origin found. In case a private GitLab repository make sure GITLAB_HOST env variable is set correctly.".to_string())
+    Err("No valid GitHub or GitLab remote origin found or token not specified. Check README.md how to set up issuefer.".to_string())
 }
 
 // find_issue_by_title searches a list of issues by title and returns true if it finds an issue.
@@ -360,6 +357,35 @@ fn find_todos_to_cleanup(todos: &[Todo], issues: &[Issue]) -> Vec<Todo> {
     todos_to_cleanup
 }
 
+fn get_default_config_locations() -> Vec<std::path::PathBuf> {
+    let mut config_paths: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(config_dir) = dirs::config_dir() {
+        config_paths.push(config_dir.join("issuefer"));
+    }
+    if let Some(config_dir) = dirs::home_dir() {
+        config_paths.push(config_dir.join(".issuefer"));
+    }
+    config_paths
+}
+
+fn get_config() -> Option<config::Config> {
+    let mut config: Option<config::Config> = None;
+    for location in get_default_config_locations() {
+        if let Ok(new_config) = config::Config::from_file(&location) {
+            println!("Using config from {}", location.to_str().unwrap());
+            config = Some(new_config);
+            break;
+        }
+    }
+    if config.is_none() {
+        if let Ok(new_config) = config::Config::from_env() {
+            println!("Using config from environment");
+            config = Some(new_config);
+        }
+    }
+    config
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let matches = App::new("IssueFER")
         .version("0.1.0")
@@ -389,13 +415,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cleanup = matches.is_present("cleanup");
     let force_yes = matches.is_present("force-yes");
 
+    println!("IssueFER v0.1.0\n");
+
+    let config = get_config();
+    if config.is_none() {
+        eprintln!("No configuration found. See README.md for details on how to set up issuefer.");
+        std::process::exit(1);
+    }
+
     let api: Box<dyn IssueAPI>;
-    match get_project_api_from_git_config() {
+    match get_project_api(config.unwrap()) {
         Ok(new_api) => {
             api = new_api;
         }
         Err(e) => {
-            eprintln!("Could not get GitHub project from git config: {}", e);
+            eprintln!("Could not determine host from git config: {}", e);
             std::process::exit(1);
         }
     }
