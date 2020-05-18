@@ -445,22 +445,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let github_issues = api.get_issues();
     if let Some(issues) = github_issues {
-        if report {
-            create_github_issues_from_todos(
-                api,
-                &compare_todos_and_issues(&source_code_todos, &issues),
-                force_yes,
-            );
+        let compared_todos_and_issues = compare_todos_and_issues(&source_code_todos, &issues);
+        if compared_todos_and_issues.is_empty() {
+            println!("No unreported TODOs found");
+        } else if report {
+            create_github_issues_from_todos(api, &compared_todos_and_issues, force_yes);
         } else {
             println!("Found the following unreported TODOs:");
-            for todo in compare_todos_and_issues(&source_code_todos, &issues) {
+            for todo in compared_todos_and_issues {
                 println!("{}", todo);
             }
             println!("To report them run issuefer with the -r/--report flag");
         }
         println!();
-        if cleanup {
-            let todos_to_cleanup = find_todos_to_cleanup(&source_code_todos, &issues);
+        let todos_to_cleanup = find_todos_to_cleanup(&source_code_todos, &issues);
+        if todos_to_cleanup.is_empty() {
+            println!("No TODOs to clean up found");
+        } else if cleanup {
             remove_todos(&todos_to_cleanup, force_yes);
         } else {
             println!("Found the following TODOs to clean up:");
