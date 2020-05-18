@@ -113,10 +113,12 @@ fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
     let mut todos = Vec::new();
 
     for (cnt, line) in f.lines().enumerate() {
-        let line = line.expect("Unable to read line");
-        let result = parse_line(source_file, cnt, &line);
-        if let Some(todo) = result {
-            todos.push(todo)
+        if line.is_ok() {
+            let line = line.expect("Unable to read line");
+            let result = parse_line(source_file, cnt, &line);
+            if let Some(todo) = result {
+                todos.push(todo)
+            }
         }
     }
 
