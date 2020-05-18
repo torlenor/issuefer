@@ -43,10 +43,17 @@ fn ask_yes_no(question: &str) -> bool {
     false
 }
 
-fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
+fn get_all_source_code_files(config: &config::GeneralConfig) -> Result<Vec<String>, io::Error> {
     let mut source_files: Vec<String> = Vec::new();
 
     let current_dir = env::current_dir()?;
+
+    if !config.ignored_extensions.is_empty() {
+        println!(
+            "Files with extensions '{}' will be ignored\n",
+            config.ignored_extensions.join(";")
+        );
+    }
 
     {
         let output = std::process::Command::new("git")
@@ -56,6 +63,15 @@ fn get_all_source_code_files() -> Result<Vec<String>, io::Error> {
             Ok(_v) => {
                 if _v.status.success() {
                     for line in String::from_utf8(_v.stdout).unwrap().lines() {
+                        let filename = std::path::Path::new(&line);
+                        if let Some(ext) = filename.extension() {
+                            if config
+                                .ignored_extensions
+                                .contains(&ext.to_str().unwrap().to_string())
+                            {
+                                continue;
+                            }
+                        }
                         source_files.push(format!(
                             "{}/{}",
                             current_dir.to_str().unwrap(),
@@ -188,25 +204,27 @@ fn get_git_config_host_owner_repo() -> Result<(String, String, String), String> 
     }
 }
 
-fn get_project_api(config: config::Config) -> Result<Box<dyn IssueAPI>, String> {
+fn get_project_api(config: &config::Config) -> Result<Box<dyn IssueAPI>, String> {
     if let Ok((host, owner, repo)) = get_git_config_host_owner_repo() {
         println!("Using host: {} owner: {} repo: {}", host, owner, repo);
-        if host == "github.com" && config.github.is_some() {
-            return Ok(Box::new(github::GitHubAPI::new(
-                config.github.unwrap(),
-                owner,
-                repo,
-            )));
+        if host == "github.com" {
+            if let Some(github_config) = &config.github {
+                return Ok(Box::new(github::GitHubAPI::new(
+                    github_config.clone(),
+                    owner,
+                    repo,
+                )));
+            }
         } else if host == "gitlab.com" {
-            for c in config.gitlab {
+            for c in &config.gitlab {
                 if c.host == "" {
-                    return Ok(Box::new(gitlab::GitLabAPI::new(c, owner, repo)));
+                    return Ok(Box::new(gitlab::GitLabAPI::new(c.clone(), owner, repo)));
                 }
             }
         } else {
-            for c in config.gitlab {
+            for c in &config.gitlab {
                 if c.host == host {
-                    return Ok(Box::new(gitlab::GitLabAPI::new(c, owner, repo)));
+                    return Ok(Box::new(gitlab::GitLabAPI::new(c.clone(), owner, repo)));
                 }
             }
         }
@@ -428,8 +446,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
+    let config_value = config.unwrap();
+
     let api: Box<dyn IssueAPI>;
-    match get_project_api(config.unwrap()) {
+    match get_project_api(&config_value) {
         Ok(new_api) => {
             api = new_api;
         }
@@ -441,7 +461,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("IssueFER running for {}\n", api.repo());
 
-    let source_files = get_all_source_code_files()?;
+    let source_files = get_all_source_code_files(&config_value.general)?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
 
     let github_issues = api.get_issues();
