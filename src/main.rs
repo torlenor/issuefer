@@ -122,22 +122,22 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
 }
 
 fn get_todos_from_source_code_file(source_file: &str) -> Vec<Todo> {
-    // TODO (#1): Implement proper error handling when parsing source files
-    let f = File::open(source_file).expect("Unable to open file");
-    let f = BufReader::new(f);
-
     let mut todos = Vec::new();
 
-    for (cnt, line) in f.lines().enumerate() {
-        if line.is_ok() {
-            let line = line.expect("Unable to read line");
-            let result = parse_line(source_file, cnt, &line);
-            if let Some(todo) = result {
-                todos.push(todo)
+    if let Ok(file) = File::open(source_file) {
+        let f = BufReader::new(file);
+
+        for (cnt, line) in f.lines().enumerate() {
+            if let Ok(content) = line {
+                let result = parse_line(source_file, cnt, &content);
+                if let Some(todo) = result {
+                    todos.push(todo)
+                }
             }
         }
+    } else {
+        println!("Warn: Could not read file {}", source_file);
     }
-
     todos
 }
 
