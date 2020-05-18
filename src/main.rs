@@ -137,7 +137,7 @@ fn get_all_todos_from_source_code_files(source_files: &[String]) -> Vec<Todo> {
 fn parse_git_config(url: &str) -> Result<(String, String, String), String> {
     let re: Regex;
     if url.starts_with("ssh://") {
-        re = Regex::new(&"ssh://git@(\\S+):?\\d*/(\\S+)/(\\S+)\\.git".to_string()).unwrap();
+        re = Regex::new(&r"ssh://git@([a-zA-Z.]+):?\d*/(\S+)/(\S+)\.git".to_string()).unwrap();
     } else if url.starts_with("https://") {
         re = Regex::new(&"https://(\\S+):?\\d*/(\\S+)/(\\S+)\\.git".to_string()).unwrap();
     } else {
@@ -190,6 +190,7 @@ fn get_git_config_host_owner_repo() -> Result<(String, String, String), String> 
 
 fn get_project_api(config: config::Config) -> Result<Box<dyn IssueAPI>, String> {
     if let Ok((host, owner, repo)) = get_git_config_host_owner_repo() {
+        println!("Using host: {} owner: {} repo: {}", host, owner, repo);
         if host == "github.com" && config.github.is_some() {
             return Ok(Box::new(github::GitHubAPI::new(
                 config.github.unwrap(),
