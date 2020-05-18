@@ -371,10 +371,12 @@ fn get_default_config_locations() -> Vec<std::path::PathBuf> {
 fn get_config() -> Option<config::Config> {
     let mut config: Option<config::Config> = None;
     for location in get_default_config_locations() {
-        if let Ok(new_config) = config::Config::from_file(&location) {
-            println!("Using config from {}", location.to_str().unwrap());
-            config = Some(new_config);
-            break;
+        if location.exists() {
+            if let Ok(new_config) = config::Config::from_file(&location) {
+                println!("Using config from {}", location.to_str().unwrap());
+                config = Some(new_config);
+                break;
+            }
         }
     }
     if config.is_none() {

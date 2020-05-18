@@ -19,7 +19,47 @@ cargo build --release
 ```
 The resulting binary can be found at `target/release/issuefer`.
 
-## GitHub token
+## Configuration
+
+### From config file
+
+Issuefer supports reading its configuration from `<CONFIG_DIR>/issuefer` (preferred) or `<HOME_DIR>/.issuefer`.
+
+<HOME_DIR> is defined as
+|Platform | Value                | Example        |
+| ------- | -------------------- | -------------- |
+| Linux   | `$HOME`              | /home/alice    |
+| macOS   | `$HOME`              | /Users/Alice   |
+| Windows | `{FOLDERID_Profile}` | C:\Users\Alice |
+
+<CONFIG_DIR> is defined as
+|Platform | Value                                 | Example                          |
+| ------- | ------------------------------------- | -------------------------------- |
+| Linux   | `$XDG_CONFIG_HOME` or `$HOME`/.config | /home/alice/.config              |
+| macOS   | `$HOME`/Library/Preferences           | /Users/Alice/Library/Preferences |
+| Windows | `{FOLDERID_RoamingAppData}`           | C:\Users\Alice\AppData\Roaming   |
+
+The config is a simple ini file in the format
+
+```ini
+[github.com]
+token = github_token
+
+[gitlab.com]
+token = gitlab_token
+
+[some.gitlab.host]
+token = other_gitlab_token
+
+[some.other.gitlab.host]
+token = yet_another_gitlab_token
+```
+
+### From environment
+
+If no config file can be found, issuefer tries to find its config from environment variables.
+
+#### GitHub token
 
 Issuefer needs a GitHub token to work. You can find out how to create [here](https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line).
 
@@ -34,7 +74,7 @@ echo 'export GITHUB_TOKEN="YOUR_TOKEN"' >> ~/.profile
 ```
 You have to login again to apply that change.
 
-## GitLab token
+#### GitLab token
 
 Issuefer needs a GitLab token when working with a GitLab repo. Create it on your GitLab page and set it with
 
@@ -48,7 +88,7 @@ echo 'export GITLAB_TOKEN="YOUR_HOST:YOUR_TOKEN;ANOTHER_HOST:ANOTHER_TOKEN;GITLA
 ```
 to make it permanent, as it is done for GitHub. The syntax is `host:token` and they are separated by `;`. If no host part is specified, it is assumed to be a gitlab.com token.
 
-## How to set environment variables on Windows with PowerShell
+#### How to set environment variables on Windows with PowerShell
 
 If you want to use issuefer on Windows and you want to use environment variables here is an example for `GITLAB_TOKEN` in PowerShell.
 

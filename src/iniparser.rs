@@ -19,6 +19,9 @@ pub struct Section {
 }
 
 impl Section {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     pub fn get(&self, name: &str) -> Result<&str, String> {
         for key in &self.keys {
             if key.name == name {
@@ -47,6 +50,9 @@ impl Ini {
         }
         Err("Not found".to_string())
     }
+    pub fn sections(&self) -> &Vec<Section> {
+        &self.sections
+    }
 }
 
 pub fn parse_ini_file(file_name: &str) -> Result<Ini, String> {
@@ -61,6 +67,9 @@ pub fn parse_ini_file(file_name: &str) -> Result<Ini, String> {
     for line in f.lines() {
         let line = line.expect("Unable to read line");
         let trimmed_line = line.trim();
+        if trimmed_line.is_empty() {
+            continue;
+        }
         let patterns: &[_] = &['#', ';'];
         if trimmed_line.starts_with(patterns) {
             continue;
