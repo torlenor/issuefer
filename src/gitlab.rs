@@ -230,7 +230,7 @@ impl IssueAPI for GitLabAPI {
     }
 
     fn create_issue(&self, title: &str) -> Option<Issue> {
-        // TODO: Implement proper error handling when creating GitLab issues
+        // TODO (#23): Implement proper error handling when creating GitLab issues
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
             host = self.config.host,
