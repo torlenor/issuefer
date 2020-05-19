@@ -189,7 +189,7 @@ impl IssueAPI for GitLabAPI {
     }
     fn get_issues(&self) -> Option<Vec<Issue>> {
         // TODO (#21): Implement proper error handling when getting issues from GitLab
-        // TODO: Support fetching additional pages of issues from GitLab
+        // TODO (#22): Support fetching additional pages of issues from GitLab
 
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
