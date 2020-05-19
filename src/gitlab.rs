@@ -165,7 +165,6 @@ pub struct GitLabAPI {
 }
 
 impl GitLabAPI {
-    // Another static method, taking two arguments:
     pub fn new(config: config::GitLabConfig, owner: String, repo: String) -> GitLabAPI {
         GitLabAPI {
             config,
@@ -189,9 +188,8 @@ impl IssueAPI for GitLabAPI {
         self.get_issues()
     }
     fn get_issues(&self) -> Option<Vec<Issue>> {
-        // Doc: https://developer.gitlab.com/v3/issues/#get-an-issue
-        // TODO (#3): Implement proper error handling when getting issues from GitLab
-        // TODO (#4): Support fetching additional pages of issues from GitLab
+        // TODO: Implement proper error handling when getting issues from GitLab
+        // TODO: Support fetching additional pages of issues from GitLab
 
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
@@ -232,7 +230,7 @@ impl IssueAPI for GitLabAPI {
     }
 
     fn create_issue(&self, title: &str) -> Option<Issue> {
-        // TODO (#5): Implement proper error handling when creating GitLab issues
+        // TODO: Implement proper error handling when creating GitLab issues
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
             host = self.config.host,

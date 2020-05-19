@@ -132,7 +132,6 @@ pub struct GitHubAPI {
 }
 
 impl GitHubAPI {
-    // Another static method, taking two arguments:
     pub fn new(config: config::GitHubConfig, owner: String, repo: String) -> GitHubAPI {
         GitHubAPI {
             config,
@@ -282,25 +281,7 @@ impl IssueAPI for GitHubAPI {
         self.get_issues("closed")
     }
     fn get_issues(&self) -> Option<Vec<Issue>> {
-        // Doc: https://developer.github.com/v3/issues/#get-an-issue
-        // TODO (#3): Implement proper error handling when getting issues from GitHub
-        // TODO (#4): Support fetching additional pages of issues from GitHub
-        let mut request_url = format!(
-            "https://api.github.com/repos/{owner}/{repo}/issues?state=all",
-            owner = self.owner,
-            repo = self.repo,
-        );
-        let mut all_issues: Vec<Issue> = Vec::new();
-        while !request_url.is_empty() {
-            match get_issues_from_url(&self.config.token, &request_url) {
-                Ok((mut issues, n)) => {
-                    request_url = n;
-                    all_issues.append(&mut issues);
-                }
-                Err(e) => eprintln!("Error getting GitHub issues: {:?}", e),
-            }
-        }
-        Some(all_issues)
+        self.get_issues("all")
     }
 
     fn create_issue(&self, title: &str) -> Option<Issue> {
