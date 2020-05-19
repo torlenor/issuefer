@@ -301,7 +301,6 @@ fn update_file(todo: &Todo, issue_number: i64, delete: bool) -> Result<(), io::E
         for (cnt, line) in reader.lines().enumerate() {
             let line = line?;
             if delete {
-                // TODO (#24): If there are two TODOs to be removed in the same file, the line number offset will be off and things go wrong
                 let trimmed = line.trim();
                 if trimmed.starts_with(&format!("// TODO (#{}):", todo.issue_number)) {
                     continue;
