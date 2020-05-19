@@ -464,7 +464,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source_files = get_all_source_code_files(&config_value.general)?;
     let source_code_todos = get_all_todos_from_source_code_files(&source_files);
 
-    let github_issues = api.get_issues();
+    let github_issues = api.get_closed_issues();
     if let Some(issues) = github_issues {
         let compared_todos_and_issues = compare_todos_and_issues(&source_code_todos, &issues);
         if compared_todos_and_issues.is_empty() {
