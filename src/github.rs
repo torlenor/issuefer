@@ -142,7 +142,6 @@ impl GitHubAPI {
 
     fn get_issues(&self, state: &str) -> Option<Vec<Issue>> {
         // Doc: https://developer.github.com/v3/issues/#get-an-issue
-        // TODO (#4): Support fetching additional pages of issues from GitHub
         let mut request_url = format!(
             "https://api.github.com/repos/{owner}/{repo}/issues?state={state}",
             owner = self.owner,
