@@ -188,7 +188,7 @@ impl IssueAPI for GitLabAPI {
         self.get_issues()
     }
     fn get_issues(&self) -> Option<Vec<Issue>> {
-        // TODO: Implement proper error handling when getting issues from GitLab
+        // TODO (#21): Implement proper error handling when getting issues from GitLab
         // TODO: Support fetching additional pages of issues from GitLab
 
         let request_url = format!(
