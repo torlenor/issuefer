@@ -7,6 +7,7 @@ pub struct Issue {
 
 pub trait IssueAPI {
     fn get_issues(&self) -> Option<Vec<Issue>>;
+    fn get_closed_issues(&self) -> Option<Vec<Issue>>;
     fn create_issue(&self, title: &str) -> Option<Issue>;
     fn repo(&self) -> String;
 }

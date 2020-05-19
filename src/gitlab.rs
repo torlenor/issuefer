@@ -185,6 +185,9 @@ impl IssueAPI for GitLabAPI {
     fn repo(&self) -> String {
         format!("GitLab {}/{}", self.owner, self.repo)
     }
+    fn get_closed_issues(&self) -> Option<Vec<Issue>> {
+        self.get_issues()
+    }
     fn get_issues(&self) -> Option<Vec<Issue>> {
         // Doc: https://developer.gitlab.com/v3/issues/#get-an-issue
         // TODO (#3): Implement proper error handling when getting issues from GitLab
