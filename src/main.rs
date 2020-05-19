@@ -483,6 +483,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if todos_to_cleanup.is_empty() {
             println!("No TODOs to clean up found");
         } else if cleanup {
+            // TODO (#24): If there are two TODOs to be removed in the same file, the line number offset will be off and things go wrong
             remove_todos(&todos_to_cleanup, force_yes);
         } else {
             println!("Found the following TODOs to clean up:");
