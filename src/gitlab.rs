@@ -168,7 +168,7 @@ impl GitLabAPI {
     pub fn new(config: config::GitLabConfig, owner: String, repo: String) -> GitLabAPI {
         GitLabAPI {
             config,
-            owner,
+            owner: owner.replace("/", "%2F"),
             repo,
         }
     }
@@ -194,7 +194,7 @@ impl IssueAPI for GitLabAPI {
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
             host = self.config.host,
-            owner = self.owner.replace("/", "%2F"),
+            owner = self.owner,
             repo = self.repo
         );
         let client = reqwest::blocking::Client::new();
