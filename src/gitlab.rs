@@ -194,7 +194,7 @@ impl IssueAPI for GitLabAPI {
         let request_url = format!(
             "https://{host}/api/v4/projects/{owner}%2F{repo}/issues",
             host = self.config.host,
-            owner = self.owner,
+            owner = self.owner.replace("/", "%2F"),
             repo = self.repo
         );
         let client = reqwest::blocking::Client::new();
