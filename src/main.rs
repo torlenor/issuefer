@@ -89,8 +89,8 @@ fn get_all_source_code_files(config: &config::GeneralConfig) -> Result<Vec<Strin
 
 fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
     lazy_static! {
-        static ref TODO_RE: Regex = Regex::new(r"^\s*//\s+TODO:\s+(.*)$").unwrap();
-        static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*//\s+TODO \(#(\d+)\):\s+(.*)$").unwrap();
+        static ref TODO_RE: Regex = Regex::new(r"^\s*//\s*TODO:\s+(.*)$").unwrap();
+        static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*//\s*TODO \(#(\d+)\):\s+(.*)$").unwrap();
     }
 
     if let Some(x) = TODO_RE.captures(line) {
