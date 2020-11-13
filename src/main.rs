@@ -89,15 +89,15 @@ fn get_all_source_code_files(config: &config::GeneralConfig) -> Result<Vec<Strin
 
 fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
     lazy_static! {
-        static ref TODO_RE: Regex = Regex::new(r"^\s*//\s*TODO:\s+(.*)$").unwrap();
-        static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*//\s*TODO \(#(\d+)\):\s+(.*)$").unwrap();
+        static ref TODO_RE: Regex = Regex::new(r"^\s*(//|#)\s*TODO:\s+(.*)$").unwrap();
+        static ref TODO_SEEN_RE: Regex = Regex::new(r"^\s*(//|#)\s*TODO \(#(\d+)\):\s+(.*)$").unwrap();
     }
 
     if let Some(x) = TODO_RE.captures(line) {
         let t = Todo {
             file_path: file_path.to_string(),
             line_number,
-            title: x.get(1).map_or("", |m| m.as_str()).to_string(),
+            title: x.get(2).map_or("", |m| m.as_str()).to_string(),
             issue_number: 0,
         };
         return Some(t);
@@ -105,7 +105,7 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
 
     if let Some(x) = TODO_SEEN_RE.captures(line) {
         let issue_number = x
-            .get(1)
+            .get(2)
             .map_or("0", |m| m.as_str())
             .to_string()
             .parse::<u16>()
@@ -113,7 +113,7 @@ fn parse_line(file_path: &str, line_number: usize, line: &str) -> Option<Todo> {
         let t = Todo {
             file_path: file_path.to_string(),
             line_number,
-            title: x.get(2).map_or("", |m| m.as_str()).to_string(),
+            title: x.get(3).map_or("", |m| m.as_str()).to_string(),
             issue_number,
         };
         return Some(t);
